@@ -1,0 +1,93 @@
+# Central configuration file for ADI CLI
+# Component registry for installer/manager
+
+[project]
+version = "0.8.3"
+edition = "2021"
+license = "BSL-1.0"
+authors = ["ADI Team"]
+repository = "https://github.com/adi-family/adi-cli"
+homepage = "https://github.com/adi-family/adi-cli"
+
+[project.description]
+cli = "CLI for ADI family components - component installer and manager"
+
+[binaries]
+cli = "adi"
+indexer_cli = "adi-indexer-cli"
+indexer_http = "adi-indexer-http"
+indexer_mcp = "adi-indexer-mcp"
+tasks_cli = "adi-tasks-cli"
+tasks_http = "adi-tasks-http"
+tasks_mcp = "adi-tasks-mcp"
+tarminal = "tarminal"
+
+[release]
+targets = ["cli"]
+cli_tag_pattern = "v{version}"
+indexer_tag_pattern = "indexer-v{version}"
+tasks_tag_pattern = "tasks-v{version}"
+
+# Component registry - points to separate repos
+[[components]]
+name = "indexer-cli"
+binary = "adi-indexer-cli"
+description = "CLI tool for ADI Code Indexer"
+crate = "adi-indexer-cli"
+version = "0.8.3"
+dependencies = []
+repo = "adi-family/adi-indexer"
+
+[[components]]
+name = "indexer-mcp"
+binary = "adi-indexer-mcp"
+description = "MCP server for ADI Code Indexer"
+crate = "adi-indexer-mcp"
+version = "0.8.3"
+dependencies = []
+repo = "adi-family/adi-indexer"
+
+[[components]]
+name = "indexer-http"
+binary = "adi-indexer-http"
+description = "HTTP API server for ADI Code Indexer"
+crate = "adi-indexer-http"
+version = "0.8.3"
+dependencies = []
+repo = "adi-family/adi-indexer"
+
+[[components]]
+name = "tasks-cli"
+binary = "adi-tasks-cli"
+description = "CLI tool for ADI Tasks management"
+crate = "adi-tasks-cli"
+version = "0.8.3"
+dependencies = []
+repo = "adi-family/adi-tasks"
+
+[[components]]
+name = "tasks-mcp"
+binary = "adi-tasks-mcp"
+description = "MCP server for ADI Tasks"
+crate = "adi-tasks-mcp"
+version = "0.8.3"
+dependencies = []
+repo = "adi-family/adi-tasks"
+
+[[components]]
+name = "tasks-http"
+binary = "adi-tasks-http"
+description = "HTTP API server for ADI Tasks"
+crate = "adi-tasks-http"
+version = "0.8.3"
+dependencies = []
+repo = "adi-family/adi-tasks"
+
+[[components]]
+name = "tarminal"
+binary = "tarminal"
+description = "High-performance GPU-accelerated terminal emulator for macOS"
+crate = "tarminal"
+version = "0.8.3"
+dependencies = []
+repo = "adi-family/tarminal"

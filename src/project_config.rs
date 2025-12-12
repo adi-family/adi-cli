@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 static PROJECT_CONFIG: OnceLock<ProjectConfig> = OnceLock::new();
 
-const CONFIG_TOML: &str = include_str!("../../../config.toml");
+const CONFIG_TOML: &str = include_str!("../config.toml");
 
 #[derive(Debug, Deserialize)]
 pub struct ProjectConfig {
@@ -55,10 +55,20 @@ pub struct Component {
     pub version: String,
     #[serde(default)]
     pub dependencies: Vec<String>,
+    #[serde(default)]
+    pub repo: String,
 }
 
 impl Component {
-    /// Convert config Component to ComponentInfo
+    pub fn parse_repo(&self) -> (&str, &str) {
+        let parts: Vec<&str> = self.repo.split('/').collect();
+        if parts.len() == 2 {
+            (parts[0], parts[1])
+        } else {
+            panic!("Invalid repo format: {}", self.repo)
+        }
+    }
+
     pub fn to_component_info(&self) -> crate::component::ComponentInfo {
         crate::component::ComponentInfo {
             name: self.name.clone(),
@@ -113,7 +123,7 @@ mod tests {
         let config = ProjectConfig::get();
         let (owner, repo) = config.parse_repository();
         assert_eq!(owner, "adi-family");
-        assert_eq!(repo, "cli");
+        assert_eq!(repo, "adi-cli");
     }
 
     #[test]

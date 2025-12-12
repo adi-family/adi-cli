@@ -49,7 +49,10 @@ impl BaseIndexerComponent {
 
     pub async fn install(&self, _config: &InstallConfig) -> Result<()> {
         let config = ProjectConfig::get();
-        let (repo_owner, repo_name) = config.parse_repository();
+        let component = config
+            .get_component(&self.info.name)
+            .expect("Component not found");
+        let (repo_owner, repo_name) = component.parse_repo();
 
         let bin_dir = self.binary_path().parent().unwrap().to_path_buf();
         let version_dir = self.version_file().parent().unwrap().to_path_buf();
@@ -58,7 +61,7 @@ impl BaseIndexerComponent {
         tokio::fs::create_dir_all(&version_dir).await?;
 
         let installer = ReleaseInstaller::new(repo_owner, repo_name, &self.binary_name)
-            .with_tag_prefix("indexer-");
+            .with_tag_prefix("");
         let version = installer.install_latest(&self.binary_path()).await?;
 
         tokio::fs::write(&self.version_file(), version.as_bytes()).await?;
