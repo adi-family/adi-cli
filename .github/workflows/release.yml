@@ -1,0 +1,145 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive: tar.gz
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Get binary name
+        id: binary
+        shell: bash
+        run: |
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            echo "name=adi.exe" >> $GITHUB_OUTPUT
+            echo "path=target/${{ matrix.target }}/release/adi.exe" >> $GITHUB_OUTPUT
+          else
+            echo "name=adi" >> $GITHUB_OUTPUT
+            echo "path=target/${{ matrix.target }}/release/adi" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Extract version
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create archive (Unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar czf ../../../adi-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz adi
+          cd -
+
+      - name: Create archive (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          cd target/${{ matrix.target }}/release
+          Compress-Archive -Path adi.exe -DestinationPath ../../../adi-${{ steps.version.outputs.version }}-${{ matrix.target }}.zip
+          cd -
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: adi-${{ matrix.target }}
+          path: |
+            adi-*.tar.gz
+            adi-*.zip
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec mv {} release/ \;
+          ls -lh release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: release/*
+          body: |
+            ## ADI CLI Manager ${{ steps.version.outputs.version }}
+
+            Component installer and manager for the ADI family.
+
+            ### Downloads
+
+            | Platform | Architecture | File |
+            |----------|-------------|------|
+            | macOS | Apple Silicon | `adi-${{ steps.version.outputs.version }}-aarch64-apple-darwin.tar.gz` |
+            | macOS | Intel | `adi-${{ steps.version.outputs.version }}-x86_64-apple-darwin.tar.gz` |
+            | Linux | x86_64 | `adi-${{ steps.version.outputs.version }}-x86_64-unknown-linux-gnu.tar.gz` |
+            | Windows | x86_64 | `adi-${{ steps.version.outputs.version }}-x86_64-pc-windows-msvc.zip` |
+
+            ### Installation
+
+            ```bash
+            # Extract and install
+            tar xzf adi-*.tar.gz && sudo mv adi /usr/local/bin/
+
+            # Verify
+            adi --version
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
