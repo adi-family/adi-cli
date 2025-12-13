@@ -60,8 +60,8 @@ impl BaseIndexerComponent {
         tokio::fs::create_dir_all(&bin_dir).await?;
         tokio::fs::create_dir_all(&version_dir).await?;
 
-        let installer = ReleaseInstaller::new(repo_owner, repo_name, &self.binary_name)
-            .with_tag_prefix("");
+        let installer =
+            ReleaseInstaller::new(repo_owner, repo_name, &self.binary_name).with_tag_prefix("");
         let version = installer.install_latest(&self.binary_path()).await?;
 
         tokio::fs::write(&self.version_file(), version.as_bytes()).await?;
