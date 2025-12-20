@@ -1,9 +1,12 @@
-use adi_cli::component::{InstallConfig, InstallStatus};
-use adi_cli::components::create_default_registry;
-use adi_cli::installer::Installer;
+use std::sync::Arc;
+
+use adi_cli::http_server::{HttpServer, HttpServerConfig};
+use adi_cli::mcp_server::McpServer;
+use adi_cli::plugin_registry::PluginManager;
+use adi_cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
 use clap::{Parser, Subcommand};
 use console::style;
-use dialoguer::{theme::ColorfulTheme, Confirm, MultiSelect};
+use dialoguer::{theme::ColorfulTheme, Confirm};
 
 #[derive(Parser)]
 #[command(name = "adi")]
@@ -16,41 +19,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// List all available components
-    List,
-
-    /// Install one or more components
-    Install {
-        /// Component names to install (interactive if not specified)
-        #[arg(value_name = "COMPONENT")]
-        components: Vec<String>,
-
-        /// Install all components
-        #[arg(long)]
-        all: bool,
-    },
-
-    /// Uninstall one or more components
-    Uninstall {
-        /// Component names to uninstall
-        #[arg(value_name = "COMPONENT")]
-        components: Vec<String>,
-    },
-
-    /// Update one or more components
-    Update {
-        /// Component names to update (all installed if not specified)
-        #[arg(value_name = "COMPONENT")]
-        components: Vec<String>,
-    },
-
-    /// Show status of components
-    Status {
-        /// Component name (all if not specified)
-        #[arg(value_name = "COMPONENT")]
-        component: Option<String>,
-    },
-
     /// Update adi CLI itself to the latest version
     SelfUpdate {
         /// Force update even if already on latest version
@@ -58,380 +26,394 @@ enum Commands {
         force: bool,
     },
 
-    /// Run ADI Code Indexer commands
-    Indexer {
+    /// Manage plugins from the registry
+    Plugin {
         #[command(subcommand)]
-        command: Option<IndexerCommands>,
-
-        /// Arguments to pass to indexer CLI
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
-}
-
-#[derive(Subcommand)]
-enum IndexerCommands {
-    /// Run MCP server
-    Mcp {
-        #[command(subcommand)]
-        command: Option<McpCommands>,
-
-        /// Arguments to pass to MCP server (when no subcommand is used)
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+        command: PluginCommands,
     },
 
-    /// Run HTTP server
+    /// Search for plugins and packages in the registry
+    Search {
+        /// Search query
+        query: String,
+    },
+
+    /// Start MCP server (JSON-RPC over stdio)
+    Mcp,
+
+    /// Start HTTP server for plugin-provided routes
     Http {
-        /// Arguments to pass to HTTP server
+        /// Port to listen on
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+
+        /// Host to bind to
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+    },
+
+    /// List registered services from loaded plugins
+    Services,
+
+    /// Run a plugin's CLI interface
+    Run {
+        /// Plugin ID to run
+        plugin_id: String,
+
+        /// Arguments to pass to the plugin
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 }
 
 #[derive(Subcommand)]
-enum McpCommands {
-    /// Initialize MCP server integration with external tools
-    Init {
-        /// Target tool to integrate with (e.g., "claude-code")
-        target: String,
+enum PluginCommands {
+    /// Search for plugins
+    Search {
+        /// Search query
+        query: String,
+    },
+
+    /// List all available plugins
+    List,
+
+    /// List installed plugins
+    Installed,
+
+    /// Install a plugin
+    Install {
+        /// Plugin ID (e.g., com.example.my-plugin)
+        plugin_id: String,
+
+        /// Specific version to install
+        #[arg(short, long)]
+        version: Option<String>,
+    },
+
+    /// Update a plugin to latest version
+    Update {
+        /// Plugin ID
+        plugin_id: String,
+    },
+
+    /// Update all installed plugins
+    UpdateAll,
+
+    /// Uninstall a plugin
+    Uninstall {
+        /// Plugin ID
+        plugin_id: String,
     },
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let registry = create_default_registry();
-    let installer = Installer::new(registry);
-    let config = InstallConfig::default();
 
     match cli.command {
-        Commands::List => cmd_list(&installer).await?,
-        Commands::Install { components, all } => {
-            cmd_install(&installer, components, all, &config).await?
-        }
-        Commands::Uninstall { components } => cmd_uninstall(&installer, components).await?,
-        Commands::Update { components } => cmd_update(&installer, components, &config).await?,
-        Commands::Status { component } => cmd_status(&installer, component).await?,
         Commands::SelfUpdate { force } => adi_cli::self_update::self_update(force).await?,
-        Commands::Indexer { command, args } => cmd_indexer(command, args).await?,
+        Commands::Plugin { command } => cmd_plugin(command).await?,
+        Commands::Search { query } => cmd_search(&query).await?,
+        Commands::Mcp => cmd_mcp().await?,
+        Commands::Http { port, host } => cmd_http(port, host).await?,
+        Commands::Services => cmd_services().await?,
+        Commands::Run { plugin_id, args } => cmd_run(&plugin_id, args).await?,
     }
 
     Ok(())
 }
 
-async fn cmd_list(installer: &Installer) -> anyhow::Result<()> {
-    println!("{}", style("Available ADI Components:").bold());
-    println!();
-
-    for component in installer.registry().list() {
-        let info = component.info();
-        let status = component.status().await?;
-
-        let status_str = match status {
-            InstallStatus::NotInstalled => style("not installed").dim(),
-            InstallStatus::Installed => style("installed").green(),
-            InstallStatus::UpdateAvailable => style("update available").yellow(),
-        };
-
-        println!(
-            "  {} {} - {} [{}]",
-            style(&info.name).cyan().bold(),
-            style(format!("v{}", info.version)).dim(),
-            info.description,
-            status_str
-        );
-
-        if !info.dependencies.is_empty() {
-            println!(
-                "    Dependencies: {}",
-                style(info.dependencies.join(", ")).dim()
-            );
-        }
-    }
-
-    Ok(())
-}
-
-async fn cmd_install(
-    installer: &Installer,
-    components: Vec<String>,
-    all: bool,
-    config: &InstallConfig,
-) -> anyhow::Result<()> {
-    let to_install = if all {
-        installer
-            .registry()
-            .names()
-            .into_iter()
-            .map(String::from)
-            .collect()
-    } else if components.is_empty() {
-        interactive_select_components(installer, "Select components to install:").await?
-    } else {
-        components
-    };
-
-    if to_install.is_empty() {
-        println!("No components selected.");
-        return Ok(());
-    }
-
-    println!("{}", style("Installing components...").bold());
-
-    for name in to_install {
-        installer.install(&name, config).await?;
-    }
-
-    println!();
-    println!("{}", style("Installation complete!").green().bold());
-
-    Ok(())
-}
-
-async fn cmd_uninstall(installer: &Installer, components: Vec<String>) -> anyhow::Result<()> {
-    let to_uninstall = if components.is_empty() {
-        interactive_select_components(installer, "Select components to uninstall:").await?
-    } else {
-        components
-    };
-
-    if to_uninstall.is_empty() {
-        println!("No components selected.");
-        return Ok(());
-    }
-
-    let confirmed = Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt(format!("Uninstall {} component(s)?", to_uninstall.len()))
-        .default(false)
-        .interact()?;
-
-    if !confirmed {
-        println!("Cancelled.");
-        return Ok(());
-    }
-
-    for name in to_uninstall {
-        installer.uninstall(&name).await?;
-    }
-
-    println!();
-    println!("{}", style("Uninstallation complete!").green().bold());
-
-    Ok(())
-}
-
-async fn cmd_update(
-    installer: &Installer,
-    components: Vec<String>,
-    config: &InstallConfig,
-) -> anyhow::Result<()> {
-    let to_update = if components.is_empty() {
-        let mut installed = Vec::new();
-        for component in installer.registry().list() {
-            if component.status().await? == InstallStatus::Installed {
-                installed.push(component.info().name.clone());
-            }
-        }
-        installed
-    } else {
-        components
-    };
-
-    if to_update.is_empty() {
-        println!("No components to update.");
-        return Ok(());
-    }
-
-    println!("{}", style("Updating components...").bold());
-
-    for name in to_update {
-        installer.update(&name, config).await?;
-    }
-
-    println!();
-    println!("{}", style("Update complete!").green().bold());
-
-    Ok(())
-}
-
-async fn cmd_status(installer: &Installer, component: Option<String>) -> anyhow::Result<()> {
-    match component {
-        Some(name) => {
-            let status = installer.status(&name).await?;
-            let status_str = match status {
-                InstallStatus::NotInstalled => "not installed",
-                InstallStatus::Installed => "installed",
-                InstallStatus::UpdateAvailable => "update available",
-            };
-            println!("{}: {}", name, status_str);
-        }
-        None => {
-            cmd_list(installer).await?;
-        }
-    }
-
-    Ok(())
-}
-
-async fn interactive_select_components(
-    installer: &Installer,
-    prompt: &str,
-) -> anyhow::Result<Vec<String>> {
-    let components: Vec<_> = installer.registry().list();
-    let items: Vec<String> = components
-        .iter()
-        .map(|c| {
-            let info = c.info();
-            format!("{} - {}", info.name, info.description)
-        })
-        .collect();
-
-    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
-        .with_prompt(prompt)
-        .items(&items)
-        .interact()?;
-
-    let selected_names = selections
-        .into_iter()
-        .map(|i| components[i].info().name.clone())
-        .collect();
-
-    Ok(selected_names)
-}
-
-async fn cmd_indexer(command: Option<IndexerCommands>, args: Vec<String>) -> anyhow::Result<()> {
-    let bin_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("adi")
-        .join("bin");
+async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
+    let manager = PluginManager::new();
 
     match command {
-        Some(IndexerCommands::Mcp {
-            command: mcp_cmd,
-            args: mcp_args,
-        }) => {
-            match mcp_cmd {
-                Some(McpCommands::Init { target }) => {
-                    cmd_mcp_init(&target, &bin_dir).await?;
-                }
-                None => {
-                    // Delegate to binary
-                    let binary_path = bin_dir.join("adi-indexer-mcp");
-                    run_binary(&binary_path, "indexer-mcp", &mcp_args)?;
+        PluginCommands::Search { query } => {
+            cmd_search(&query).await?;
+        }
+        PluginCommands::List => {
+            println!("{}", style("Available Plugins:").bold());
+            println!();
+
+            let plugins = manager.list_plugins().await?;
+
+            if plugins.is_empty() {
+                println!("  No plugins available in the registry.");
+                return Ok(());
+            }
+
+            for plugin in plugins {
+                println!(
+                    "  {} {} - {} [{}]",
+                    style(&plugin.id).cyan().bold(),
+                    style(format!("v{}", plugin.latest_version)).dim(),
+                    plugin.description,
+                    style(&plugin.plugin_type).yellow()
+                );
+                if !plugin.tags.is_empty() {
+                    println!("    Tags: {}", style(plugin.tags.join(", ")).dim());
                 }
             }
         }
-        Some(IndexerCommands::Http { args: http_args }) => {
-            let binary_path = bin_dir.join("adi-indexer-http");
-            run_binary(&binary_path, "llm-code-indexer-http", &http_args)?;
+        PluginCommands::Installed => {
+            println!("{}", style("Installed Plugins:").bold());
+            println!();
+
+            let installed = manager.list_installed().await?;
+
+            if installed.is_empty() {
+                println!("  No plugins installed.");
+                println!();
+                println!(
+                    "  Install plugins with: {}",
+                    style("adi plugin install <plugin-id>").cyan()
+                );
+                return Ok(());
+            }
+
+            for (id, version) in installed {
+                println!(
+                    "  {} {}",
+                    style(&id).cyan().bold(),
+                    style(format!("v{}", version)).dim(),
+                );
+            }
         }
-        None => {
-            let binary_path = bin_dir.join("adi-indexer-cli");
-            run_binary(&binary_path, "indexer-cli", &args)?;
+        PluginCommands::Install { plugin_id, version } => {
+            manager
+                .install_plugin(&plugin_id, version.as_deref())
+                .await?;
+        }
+        PluginCommands::Update { plugin_id } => {
+            manager.update_plugin(&plugin_id).await?;
+        }
+        PluginCommands::UpdateAll => {
+            let installed = manager.list_installed().await?;
+
+            if installed.is_empty() {
+                println!("No plugins installed.");
+                return Ok(());
+            }
+
+            println!(
+                "{} {} plugin(s)...",
+                style("Updating").bold(),
+                installed.len()
+            );
+
+            for (id, _) in installed {
+                if let Err(e) = manager.update_plugin(&id).await {
+                    eprintln!(
+                        "{} Failed to update {}: {}",
+                        style("Warning:").yellow(),
+                        id,
+                        e
+                    );
+                }
+            }
+
+            println!();
+            println!("{}", style("Update complete!").green().bold());
+        }
+        PluginCommands::Uninstall { plugin_id } => {
+            let confirmed = Confirm::with_theme(&ColorfulTheme::default())
+                .with_prompt(format!("Uninstall plugin {}?", plugin_id))
+                .default(false)
+                .interact()?;
+
+            if !confirmed {
+                println!("Cancelled.");
+                return Ok(());
+            }
+
+            manager.uninstall_plugin(&plugin_id).await?;
         }
     }
 
     Ok(())
 }
 
-fn run_binary(
-    binary_path: &std::path::Path,
-    component_name: &str,
-    args: &[String],
-) -> anyhow::Result<()> {
-    use std::process::Command;
+async fn cmd_search(query: &str) -> anyhow::Result<()> {
+    let manager = PluginManager::new();
 
-    if !binary_path.exists() {
+    println!(
+        "{} \"{}\"...",
+        style("Searching for").bold(),
+        style(query).cyan()
+    );
+    println!();
+
+    let results = manager.search(query).await?;
+
+    if results.packages.is_empty() && results.plugins.is_empty() {
+        println!("  No results found.");
+        return Ok(());
+    }
+
+    if !results.packages.is_empty() {
+        println!("{}", style("Packages:").bold().underlined());
+        for pkg in &results.packages {
+            println!(
+                "  {} {} - {}",
+                style(&pkg.id).cyan().bold(),
+                style(format!("v{}", pkg.latest_version)).dim(),
+                pkg.description
+            );
+            if !pkg.tags.is_empty() {
+                println!("    Tags: {}", style(pkg.tags.join(", ")).dim());
+            }
+        }
+        println!();
+    }
+
+    if !results.plugins.is_empty() {
+        println!("{}", style("Plugins:").bold().underlined());
+        for plugin in &results.plugins {
+            println!(
+                "  {} {} - {} [{}]",
+                style(&plugin.id).cyan().bold(),
+                style(format!("v{}", plugin.latest_version)).dim(),
+                plugin.description,
+                style(&plugin.plugin_type).yellow()
+            );
+            if !plugin.tags.is_empty() {
+                println!("    Tags: {}", style(plugin.tags.join(", ")).dim());
+            }
+        }
+    }
+
+    println!();
+    println!(
+        "Found {} package(s) and {} plugin(s)",
+        results.packages.len(),
+        results.plugins.len()
+    );
+
+    Ok(())
+}
+
+async fn cmd_mcp() -> anyhow::Result<()> {
+    // Initialize tracing for logging
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::WARN.into()),
+        )
+        .with_writer(std::io::stderr)
+        .init();
+
+    // Create plugin runtime and load plugins
+    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
+    runtime.load_all_plugins().await?;
+
+    // Create and run MCP server
+    #[allow(clippy::arc_with_non_send_sync)]
+    let runtime_arc = Arc::new(runtime);
+    let mut server = McpServer::new(runtime_arc);
+    server.run().await?;
+
+    Ok(())
+}
+
+async fn cmd_http(port: u16, host: String) -> anyhow::Result<()> {
+    // Initialize tracing for logging
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::INFO.into()),
+        )
+        .init();
+
+    let config = HttpServerConfig {
+        port,
+        host: host.clone(),
+    };
+
+    println!(
+        "{}",
+        style(format!("Starting HTTP server on {}:{}", host, port)).bold()
+    );
+
+    let server = HttpServer::new(config);
+    server.run().await?;
+
+    Ok(())
+}
+
+async fn cmd_services() -> anyhow::Result<()> {
+    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
+    runtime.load_all_plugins().await?;
+
+    let services = runtime.list_services();
+
+    if services.is_empty() {
+        println!("No services registered.");
+        println!();
+        println!(
+            "Install plugins to add services: {}",
+            style("adi plugin install <id>").cyan()
+        );
+        return Ok(());
+    }
+
+    println!("{}", style("Registered Services:").bold());
+    println!();
+
+    for service in services {
+        println!(
+            "  {} {} - {} [from {}]",
+            style(service.id.as_str()).cyan().bold(),
+            style(format!(
+                "v{}.{}.{}",
+                service.version.major, service.version.minor, service.version.patch
+            ))
+            .dim(),
+            service.description.as_str(),
+            style(service.provider_id.as_str()).yellow()
+        );
+    }
+
+    Ok(())
+}
+
+async fn cmd_run(plugin_id: &str, args: Vec<String>) -> anyhow::Result<()> {
+    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
+    runtime.load_all_plugins().await?;
+
+    // Check if plugin is installed
+    let installed = runtime.list_installed();
+    if !installed.contains(&plugin_id.to_string()) {
         eprintln!(
-            "{} Binary not found: {}",
+            "{} Plugin '{}' not found",
             style("Error:").red().bold(),
-            binary_path.display()
+            plugin_id
         );
-        eprintln!(
-            "Install it with: {}",
-            style(format!("adi install {}", component_name)).cyan()
-        );
+        eprintln!();
+        eprintln!("Installed plugins:");
+        for id in &installed {
+            eprintln!("  - {}", id);
+        }
         std::process::exit(1);
     }
 
-    let status = Command::new(binary_path).args(args).status()?;
+    // Build CLI context
+    let context = serde_json::json!({
+        "command": plugin_id,
+        "args": args,
+        "cwd": std::env::current_dir()?.to_string_lossy()
+    });
 
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
-    }
-
-    Ok(())
-}
-
-async fn cmd_mcp_init(target: &str, bin_dir: &std::path::Path) -> anyhow::Result<()> {
-    use std::process::Command;
-
-    match target {
-        "claude-code" => {
-            let binary_path = bin_dir.join("adi-indexer-mcp");
-
-            if !binary_path.exists() {
-                eprintln!(
-                    "{} MCP server binary not found: {}",
-                    style("Error:").red().bold(),
-                    binary_path.display()
-                );
-                eprintln!(
-                    "Install it first with: {}",
-                    style("adi install indexer-mcp").cyan()
-                );
-                std::process::exit(1);
-            }
-
-            println!(
-                "{}",
-                style("Registering MCP server with Claude Code...").bold()
-            );
-
-            let status = Command::new("claude")
-                .args([
-                    "mcp",
-                    "add",
-                    "--transport",
-                    "stdio",
-                    "indexer-mcp",
-                    "--",
-                    binary_path.to_str().unwrap(),
-                ])
-                .status()?;
-
-            if !status.success() {
-                eprintln!(
-                    "{} Failed to register MCP server with Claude Code",
-                    style("Error:").red().bold()
-                );
-                eprintln!("Make sure you have Claude Code CLI installed.");
-                std::process::exit(status.code().unwrap_or(1));
-            }
-
-            println!(
-                "{}",
-                style("✓ MCP server registered successfully!")
-                    .green()
-                    .bold()
-            );
-            println!();
-            println!("You can now use the indexer-mcp server in Claude Code:");
-            println!("  • Reference resources: @indexer-mcp/resource-name");
-            println!("  • Check status: /mcp");
-            println!("  • View registered servers: claude mcp list");
+    match runtime.run_cli_command(&context.to_string()) {
+        Ok(result) => {
+            println!("{}", result);
+            Ok(())
         }
-        _ => {
+        Err(e) => {
             eprintln!(
-                "{} Unknown target: {}",
+                "{} Failed to run plugin: {}",
                 style("Error:").red().bold(),
-                target
+                e
             );
-            eprintln!("Supported targets: claude-code");
             std::process::exit(1);
         }
     }
-
-    Ok(())
 }

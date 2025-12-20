@@ -28,6 +28,27 @@ pub enum InstallerError {
 
     #[error("Uninstallation failed for '{component}': {reason}")]
     UninstallationFailed { component: String, reason: String },
+
+    #[error("Registry error: {0}")]
+    Registry(#[from] lib_plugin_registry::RegistryError),
+
+    #[error("Plugin not found: {id}")]
+    PluginNotFound { id: String },
+
+    #[error("Plugin host error: {0}")]
+    PluginHost(#[from] lib_plugin_host::HostError),
+
+    #[error("Service error: {0}")]
+    Service(String),
+
+    #[error("{0}")]
+    Other(String),
+}
+
+impl From<lib_plugin_abi::ServiceError> for InstallerError {
+    fn from(e: lib_plugin_abi::ServiceError) -> Self {
+        InstallerError::Service(e.message.to_string())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, InstallerError>;

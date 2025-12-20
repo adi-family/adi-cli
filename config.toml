@@ -9,6 +9,9 @@ authors = ["ADI Team"]
 repository = "https://github.com/adi-family/adi-cli"
 homepage = "https://github.com/adi-family/adi-cli"
 
+[registry]
+url = "https://adi-plugin-registry.the-ihor.com"
+
 [project.description]
 cli = "CLI for ADI family components - component installer and manager"
 

@@ -68,15 +68,6 @@ impl Component {
             panic!("Invalid repo format: {}", self.repo)
         }
     }
-
-    pub fn to_component_info(&self) -> crate::component::ComponentInfo {
-        crate::component::ComponentInfo {
-            name: self.name.clone(),
-            version: self.version.clone(),
-            description: self.description.clone(),
-            dependencies: self.dependencies.clone(),
-        }
-    }
 }
 
 impl ProjectConfig {

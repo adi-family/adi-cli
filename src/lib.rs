@@ -1,14 +1,13 @@
-pub mod component;
-pub mod components;
 pub mod error;
-pub mod installer;
+pub mod http_server;
+pub mod mcp_server;
+pub mod plugin_registry;
+pub mod plugin_runtime;
 pub mod project_config;
-pub mod registry;
-pub mod release_installer;
 pub mod self_update;
 
-pub use component::{Component, ComponentInfo, InstallConfig, InstallStatus};
 pub use error::{InstallerError, Result};
-pub use installer::Installer;
-pub use registry::ComponentRegistry;
-pub use release_installer::ReleaseInstaller;
+pub use http_server::{HttpServer, HttpServerConfig};
+pub use mcp_server::McpServer;
+pub use plugin_registry::PluginManager;
+pub use plugin_runtime::{PluginRuntime, RuntimeConfig};

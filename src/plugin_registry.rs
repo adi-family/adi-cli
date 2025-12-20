@@ -151,9 +151,10 @@ impl PluginManager {
                     if let Ok(metadata) = tokio::fs::metadata(&path).await {
                         let mut perms = metadata.permissions();
                         // Make files executable if they look like binaries
-                        if !path.extension().is_some_and(|e| {
-                            e == "json" || e == "toml" || e == "txt" || e == "md"
-                        }) {
+                        if !path
+                            .extension()
+                            .is_some_and(|e| e == "json" || e == "toml" || e == "txt" || e == "md")
+                        {
                             perms.set_mode(0o755);
                             let _ = tokio::fs::set_permissions(&path, perms).await;
                         }
