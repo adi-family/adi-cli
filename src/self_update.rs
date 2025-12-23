@@ -1,24 +1,11 @@
 use anyhow::{anyhow, Result};
 use console::style;
-use reqwest;
-use serde::Deserialize;
+use lib_github_client::{no_auth, Client, Release, ReleaseAsset};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::project_config::ProjectConfig;
-
-#[derive(Debug, Clone, Deserialize)]
-struct GitHubRelease {
-    tag_name: String,
-    assets: Vec<GitHubAsset>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct GitHubAsset {
-    name: String,
-    browser_download_url: String,
-}
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -90,30 +77,23 @@ async fn fetch_latest_version() -> Result<String> {
     Ok(version)
 }
 
-async fn fetch_latest_release() -> Result<GitHubRelease> {
+fn build_github_client() -> Result<Client> {
+    Client::builder()
+        .user_agent("adi-installer")
+        .auth(no_auth())
+        .build()
+        .map_err(|e| anyhow!("Failed to build GitHub client: {}", e))
+}
+
+async fn fetch_latest_release() -> Result<Release> {
     let config = ProjectConfig::get();
     let (repo_owner, repo_name) = config.parse_repository();
 
-    // Fetch all releases to filter for CLI-specific ones
-    let url = format!(
-        "https://api.github.com/repos/{}/{}/releases",
-        repo_owner, repo_name
-    );
-
-    let client = reqwest::Client::builder()
-        .user_agent("adi-installer")
-        .build()?;
-
-    let response = client.get(&url).send().await?;
-
-    if !response.status().is_success() {
-        return Err(anyhow!(
-            "Failed to fetch release info: HTTP {}",
-            response.status()
-        ));
-    }
-
-    let releases: Vec<GitHubRelease> = response.json().await?;
+    let client = build_github_client()?;
+    let releases = client
+        .list_releases(repo_owner, repo_name)
+        .await
+        .map_err(|e| anyhow!("Failed to fetch releases: {}", e))?;
 
     // Filter for CLI manager releases only
     // Priority: cli-v* (new format), fallback to v* without component prefix (legacy)
@@ -158,7 +138,7 @@ fn detect_platform() -> Result<String> {
     Ok(format!("{}-{}", arch, os))
 }
 
-fn select_asset<'a>(release: &'a GitHubRelease, platform: &str) -> Result<&'a GitHubAsset> {
+fn select_asset<'a>(release: &'a Release, platform: &str) -> Result<&'a ReleaseAsset> {
     release
         .assets
         .iter()

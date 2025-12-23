@@ -27,6 +27,9 @@ flate2 = "1"
 tar = "0.4"
 zip = "0.6"
 
+# GitHub API
+lib-github-client = { path = "../lib-github-client" }
+
 # Plugin system
 lib-plugin-registry = { path = "../lib-plugin-registry" }
 lib-plugin-host = { path = "../lib-plugin-host" }
