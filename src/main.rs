@@ -402,7 +402,7 @@ async fn cmd_run(plugin_id: &str, args: Vec<String>) -> anyhow::Result<()> {
         "cwd": std::env::current_dir()?.to_string_lossy()
     });
 
-    match runtime.run_cli_command(&context.to_string()) {
+    match runtime.run_cli_command(plugin_id, &context.to_string()) {
         Ok(result) => {
             println!("{}", result);
             Ok(())
