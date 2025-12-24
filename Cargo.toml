@@ -28,7 +28,7 @@ tar = "0.4"
 zip = "0.6"
 
 # GitHub API
-lib-github-client = { path = "../lib-github-client" }
+lib-client-github = { path = "../lib-client-github" }
 
 # Plugin system
 lib-plugin-registry = { path = "../lib-plugin-registry" }

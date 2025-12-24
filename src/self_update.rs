@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use console::style;
-use lib_github_client::{no_auth, Client, Release, ReleaseAsset};
+use lib_client_github::{no_auth, Client, Release, ReleaseAsset};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
