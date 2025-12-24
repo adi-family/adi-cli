@@ -135,8 +135,11 @@ jobs:
             ### Installation
 
             ```bash
-            # Extract and install
-            tar xzf adi-*.tar.gz && sudo mv adi /usr/local/bin/
+            # One-liner install (recommended)
+            curl -fsSL https://adi.the-ihor.com/install.sh | sh
+
+            # Or manual install
+            tar xzf adi-*.tar.gz && mv adi ~/.local/bin/
 
             # Verify
             adi --version
