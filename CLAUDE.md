@@ -17,7 +17,7 @@ adi-cli, rust, plugin-manager, plugin-registry, mcp-server, http-server, cross-p
 - `adi mcp` - Start MCP server (JSON-RPC over stdio)
 - `adi http` - Start HTTP server for plugin-provided routes
 - `adi services` - List registered services from loaded plugins
-- `adi run <plugin-id>` - Run a plugin's CLI interface
+- `adi run [plugin-id]` - Run a plugin's CLI interface (lists runnable plugins if omitted)
 - `adi self-update` - Update adi CLI itself
 
 ## Architecture

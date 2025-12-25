@@ -175,13 +175,29 @@ impl PluginRuntime {
             .collect()
     }
 
-    /// List plugins that provide CLI commands.
+    /// List plugins that provide CLI commands (legacy SERVICE_CLI_COMMANDS).
     pub fn list_cli_providers(&self) -> Vec<String> {
         self.service_registry()
             .list()
             .iter()
             .filter(|s| s.id.as_str() == SERVICE_CLI_COMMANDS)
             .map(|s| s.provider_id.as_str().to_string())
+            .collect()
+    }
+
+    /// List plugins with runnable CLI interfaces.
+    /// Returns (plugin_id, description) for each plugin with a `.cli` service.
+    pub fn list_runnable_plugins(&self) -> Vec<(String, String)> {
+        self.service_registry()
+            .list()
+            .iter()
+            .filter(|s| s.id.as_str().ends_with(".cli"))
+            .map(|s| {
+                // Extract plugin_id from service_id (e.g., "adi.tasks.cli" -> "adi.tasks")
+                let service_id = s.id.as_str();
+                let plugin_id = service_id.strip_suffix(".cli").unwrap_or(service_id);
+                (plugin_id.to_string(), s.description.as_str().to_string())
+            })
             .collect()
     }
 

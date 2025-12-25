@@ -57,8 +57,8 @@ enum Commands {
 
     /// Run a plugin's CLI interface
     Run {
-        /// Plugin ID to run
-        plugin_id: String,
+        /// Plugin ID to run (shows available plugins if omitted)
+        plugin_id: Option<String>,
 
         /// Arguments to pass to the plugin
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -117,7 +117,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Mcp => cmd_mcp().await?,
         Commands::Http { port, host } => cmd_http(port, host).await?,
         Commands::Services => cmd_services().await?,
-        Commands::Run { plugin_id, args } => cmd_run(&plugin_id, args).await?,
+        Commands::Run { plugin_id, args } => cmd_run(plugin_id, args).await?,
     }
 
     Ok(())
@@ -375,22 +375,60 @@ async fn cmd_services() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn cmd_run(plugin_id: &str, args: Vec<String>) -> anyhow::Result<()> {
+async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result<()> {
     let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
     runtime.load_all_plugins().await?;
 
-    // Check if plugin is installed
-    let installed = runtime.list_installed();
-    if !installed.contains(&plugin_id.to_string()) {
+    // Get plugins with CLI services
+    let runnable = runtime.list_runnable_plugins();
+
+    // If no plugin_id provided, show available plugins
+    let plugin_id = match plugin_id {
+        Some(id) => id,
+        None => {
+            println!("{}", style("Runnable Plugins:").bold());
+            println!();
+
+            if runnable.is_empty() {
+                println!("  No plugins with CLI interface installed.");
+                println!();
+                println!(
+                    "  Install plugins with: {}",
+                    style("adi plugin install <plugin-id>").cyan()
+                );
+            } else {
+                for (id, description) in &runnable {
+                    println!(
+                        "  {} - {}",
+                        style(id).cyan().bold(),
+                        style(description).dim()
+                    );
+                }
+                println!();
+                println!(
+                    "Run a plugin with: {}",
+                    style("adi run <plugin-id> [args...]").cyan()
+                );
+            }
+            return Ok(());
+        }
+    };
+
+    // Check if plugin has CLI service
+    if !runnable.iter().any(|(id, _)| id == &plugin_id) {
         eprintln!(
-            "{} Plugin '{}' not found",
+            "{} Plugin '{}' not found or has no CLI interface",
             style("Error:").red().bold(),
             plugin_id
         );
         eprintln!();
-        eprintln!("Installed plugins:");
-        for id in &installed {
-            eprintln!("  - {}", id);
+        if runnable.is_empty() {
+            eprintln!("No runnable plugins installed.");
+        } else {
+            eprintln!("Runnable plugins:");
+            for (id, _) in &runnable {
+                eprintln!("  - {}", id);
+            }
         }
         std::process::exit(1);
     }
@@ -402,7 +440,7 @@ async fn cmd_run(plugin_id: &str, args: Vec<String>) -> anyhow::Result<()> {
         "cwd": std::env::current_dir()?.to_string_lossy()
     });
 
-    match runtime.run_cli_command(plugin_id, &context.to_string()) {
+    match runtime.run_cli_command(&plugin_id, &context.to_string()) {
         Ok(result) => {
             println!("{}", result);
             Ok(())
