@@ -20,6 +20,16 @@ adi-cli, rust, plugin-manager, plugin-registry, mcp-server, http-server, cross-p
 - `adi run [plugin-id]` - Run a plugin's CLI interface (lists runnable plugins if omitted)
 - `adi self-update` - Update adi CLI itself
 
+## Direct Plugin Commands
+Plugins with CLI services can be invoked directly as subcommands:
+- `adi tasks <args>` - Task management (replaces `adi run adi.tasks <args>`)
+- `adi agent-loop <args>` - Agent loop operations (replaces `adi run adi.agent-loop <args>`)
+
+Examples:
+- `adi tasks list` - List all tasks
+- `adi tasks add "New task"` - Add a new task
+- `adi agent-loop run` - Run agent loop
+
 ## Architecture
 - Plugin-based system using dynamic libraries (cdylib)
 - Plugin loading via `lib-plugin-host` crate

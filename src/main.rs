@@ -64,6 +64,21 @@ enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+
+    /// Task management - dependency graphs and task tracking
+    Tasks {
+        /// Arguments to pass to task manager
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
+    /// Agent loop - autonomous LLM agents for code tasks
+    #[command(name = "agent-loop")]
+    AgentLoop {
+        /// Arguments to pass to agent loop
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -118,6 +133,8 @@ async fn main() -> anyhow::Result<()> {
         Commands::Http { port, host } => cmd_http(port, host).await?,
         Commands::Services => cmd_services().await?,
         Commands::Run { plugin_id, args } => cmd_run(plugin_id, args).await?,
+        Commands::Tasks { args } => cmd_plugin_direct("adi.tasks", args).await?,
+        Commands::AgentLoop { args } => cmd_plugin_direct("adi.agent-loop", args).await?,
     }
 
     Ok(())
@@ -449,6 +466,50 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
             eprintln!(
                 "{} Failed to run plugin: {}",
                 style("Error:").red().bold(),
+                e
+            );
+            std::process::exit(1);
+        }
+    }
+}
+
+async fn cmd_plugin_direct(plugin_id: &str, args: Vec<String>) -> anyhow::Result<()> {
+    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
+    runtime.load_all_plugins().await?;
+
+    // Check if plugin has CLI service
+    let service_id = format!("{}.cli", plugin_id);
+    if !runtime.has_service(&service_id) {
+        eprintln!(
+            "{} Plugin '{}' not found or not installed",
+            style("Error:").red().bold(),
+            plugin_id
+        );
+        eprintln!();
+        eprintln!(
+            "Install with: {}",
+            style(format!("adi plugin install {}", plugin_id)).cyan()
+        );
+        std::process::exit(1);
+    }
+
+    // Build CLI context
+    let context = serde_json::json!({
+        "command": plugin_id,
+        "args": args,
+        "cwd": std::env::current_dir()?.to_string_lossy()
+    });
+
+    match runtime.run_cli_command(plugin_id, &context.to_string()) {
+        Ok(result) => {
+            println!("{}", result);
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!(
+                "{} Failed to run {}: {}",
+                style("Error:").red().bold(),
+                plugin_id,
                 e
             );
             std::process::exit(1);
