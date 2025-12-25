@@ -297,9 +297,9 @@ impl PluginRuntime {
         // Look up plugin-specific CLI service (e.g., "adi.tasks.cli")
         let service_id = format!("{}.cli", plugin_id);
         let registry = self.service_registry();
-        let handle = registry.lookup(&service_id).ok_or_else(|| {
-            crate::error::InstallerError::PluginNotFound { id: service_id }
-        })?;
+        let handle = registry
+            .lookup(&service_id)
+            .ok_or_else(|| crate::error::InstallerError::PluginNotFound { id: service_id })?;
 
         let result = unsafe { handle.invoke("run_command", context_json)? };
         Ok(result)
@@ -309,9 +309,9 @@ impl PluginRuntime {
     pub fn list_cli_commands(&self, plugin_id: &str) -> Result<String> {
         let service_id = format!("{}.cli", plugin_id);
         let registry = self.service_registry();
-        let handle = registry.lookup(&service_id).ok_or_else(|| {
-            crate::error::InstallerError::PluginNotFound { id: service_id }
-        })?;
+        let handle = registry
+            .lookup(&service_id)
+            .ok_or_else(|| crate::error::InstallerError::PluginNotFound { id: service_id })?;
 
         let result = unsafe { handle.invoke("list_commands", "{}")? };
         Ok(result)

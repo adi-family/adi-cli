@@ -265,7 +265,11 @@ impl PluginManager {
     }
 
     /// Install all plugins matching a glob pattern (e.g., "adi.lang.*")
-    pub async fn install_plugins_matching(&self, pattern: &str, version: Option<&str>) -> Result<()> {
+    pub async fn install_plugins_matching(
+        &self,
+        pattern: &str,
+        version: Option<&str>,
+    ) -> Result<()> {
         if !is_pattern(pattern) {
             // Not a pattern, just install single plugin
             return self.install_plugin(pattern, version).await;
