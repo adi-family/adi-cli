@@ -263,6 +263,99 @@ impl PluginManager {
     pub fn plugin_path(&self, id: &str) -> PathBuf {
         self.install_dir.join(id)
     }
+
+    /// Install all plugins matching a glob pattern (e.g., "adi.lang.*")
+    pub async fn install_plugins_matching(&self, pattern: &str, version: Option<&str>) -> Result<()> {
+        if !is_pattern(pattern) {
+            // Not a pattern, just install single plugin
+            return self.install_plugin(pattern, version).await;
+        }
+
+        println!(
+            "{} pattern \"{}\"...",
+            style("Searching for plugins matching").bold(),
+            style(pattern).cyan()
+        );
+
+        // Fetch all available plugins
+        let all_plugins = self.list_plugins().await?;
+
+        // Filter plugins matching the pattern
+        let matching: Vec<_> = all_plugins
+            .iter()
+            .filter(|p| matches_pattern(&p.id, pattern))
+            .collect();
+
+        if matching.is_empty() {
+            println!(
+                "{} No plugins found matching pattern \"{}\"",
+                style("Warning:").yellow(),
+                pattern
+            );
+            return Ok(());
+        }
+
+        println!(
+            "{} {} plugin(s) matching pattern",
+            style("Found").green().bold(),
+            matching.len()
+        );
+        println!();
+
+        for plugin in &matching {
+            println!(
+                "  {} {} - {}",
+                style(&plugin.id).cyan().bold(),
+                style(format!("v{}", plugin.latest_version)).dim(),
+                plugin.description
+            );
+        }
+
+        println!();
+        println!(
+            "{} {} plugin(s)...",
+            style("Installing").bold(),
+            matching.len()
+        );
+        println!();
+
+        let mut installed = 0;
+        let mut failed = Vec::new();
+
+        for plugin in &matching {
+            match self.install_plugin(&plugin.id, version).await {
+                Ok(_) => {
+                    installed += 1;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "{} Failed to install {}: {}",
+                        style("Warning:").yellow(),
+                        plugin.id,
+                        e
+                    );
+                    failed.push(plugin.id.clone());
+                }
+            }
+            println!(); // Blank line between installs
+        }
+
+        println!(
+            "{} {} plugin(s) installed successfully!",
+            style("Success:").green().bold(),
+            installed
+        );
+
+        if !failed.is_empty() {
+            println!();
+            println!("{} Failed to install:", style("Warning:").yellow());
+            for id in failed {
+                println!("  - {}", id);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 fn get_current_platform() -> String {
@@ -279,4 +372,45 @@ fn get_current_platform() -> String {
     let arch_name = arch;
 
     format!("{}-{}", os_name, arch_name)
+}
+
+/// Check if a pattern contains wildcards
+fn is_pattern(s: &str) -> bool {
+    s.contains('*')
+}
+
+/// Match a string against a simple glob pattern (supports * wildcard)
+fn matches_pattern(s: &str, pattern: &str) -> bool {
+    let parts: Vec<&str> = pattern.split('*').collect();
+
+    if parts.len() == 1 {
+        // No wildcards, exact match
+        return s == pattern;
+    }
+
+    let mut pos = 0;
+
+    for (i, part) in parts.iter().enumerate() {
+        if i == 0 {
+            // First part must match at start
+            if !s.starts_with(part) {
+                return false;
+            }
+            pos = part.len();
+        } else if i == parts.len() - 1 {
+            // Last part must match at end
+            if !s.ends_with(part) {
+                return false;
+            }
+        } else {
+            // Middle parts must exist in order
+            if let Some(found_pos) = s[pos..].find(part) {
+                pos += found_pos + part.len();
+            } else {
+                return false;
+            }
+        }
+    }
+
+    true
 }

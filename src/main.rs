@@ -95,9 +95,9 @@ enum PluginCommands {
     /// List installed plugins
     Installed,
 
-    /// Install a plugin
+    /// Install a plugin or multiple plugins matching a pattern
     Install {
-        /// Plugin ID (e.g., com.example.my-plugin)
+        /// Plugin ID (e.g., com.example.my-plugin) or pattern (e.g., adi.lang.*)
         plugin_id: String,
 
         /// Specific version to install
@@ -197,7 +197,7 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
         }
         PluginCommands::Install { plugin_id, version } => {
             manager
-                .install_plugin(&plugin_id, version.as_deref())
+                .install_plugins_matching(&plugin_id, version.as_deref())
                 .await?;
         }
         PluginCommands::Update { plugin_id } => {
