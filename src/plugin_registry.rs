@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 use console::style;
@@ -173,6 +174,90 @@ impl PluginManager {
         Ok(())
     }
 
+    /// Install a plugin and all its dependencies.
+    pub async fn install_with_dependencies(&self, id: &str, version: Option<&str>) -> Result<()> {
+        // Track what we're installing to avoid cycles
+        let mut installing = HashSet::new();
+        self.install_recursive(id, version, &mut installing).await
+    }
+
+    /// Recursively install a plugin and its dependencies.
+    async fn install_recursive(
+        &self,
+        id: &str,
+        version: Option<&str>,
+        installing: &mut HashSet<String>,
+    ) -> Result<()> {
+        // Check for cycles
+        if installing.contains(id) {
+            return Ok(());
+        }
+        installing.insert(id.to_string());
+
+        // Check if already installed
+        let version_file = self.install_dir.join(id).join(".version");
+        if version_file.exists() {
+            // Already installed, skip
+            return Ok(());
+        }
+
+        // Install the plugin first (to get the manifest)
+        self.install_plugin(id, version).await?;
+
+        // Now check for dependencies in the installed manifest
+        let deps = self.get_plugin_dependencies(id).await;
+
+        for dep in deps {
+            if !installing.contains(&dep) {
+                println!(
+                    "{} Installing dependency: {}",
+                    style("->").cyan(),
+                    style(&dep).bold()
+                );
+                // Recursively install dependency
+                Box::pin(self.install_recursive(&dep, None, installing)).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Read dependencies from an installed plugin's manifest.
+    async fn get_plugin_dependencies(&self, id: &str) -> Vec<String> {
+        let mut deps = Vec::new();
+
+        // Find the latest version directory
+        let plugin_dir = self.install_dir.join(id);
+        let version_file = plugin_dir.join(".version");
+
+        let version = match tokio::fs::read_to_string(&version_file).await {
+            Ok(v) => v.trim().to_string(),
+            Err(_) => return deps,
+        };
+
+        let manifest_path = plugin_dir.join(&version).join("plugin.toml");
+
+        let content = match tokio::fs::read_to_string(&manifest_path).await {
+            Ok(c) => c,
+            Err(_) => return deps,
+        };
+
+        // Parse TOML to extract depends_on
+        if let Ok(table) = content.parse::<toml::Table>() {
+            if let Some(compat) = table.get("compatibility").and_then(|c| c.as_table()) {
+                if let Some(depends) = compat.get("depends_on").and_then(|d| d.as_array()) {
+                    for dep in depends {
+                        if let Some(s) = dep.as_str() {
+                            deps.push(s.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        deps
+    }
+
     pub async fn uninstall_plugin(&self, id: &str) -> Result<()> {
         let plugin_dir = self.install_dir.join(id);
 
@@ -271,8 +356,8 @@ impl PluginManager {
         version: Option<&str>,
     ) -> Result<()> {
         if !is_pattern(pattern) {
-            // Not a pattern, just install single plugin
-            return self.install_plugin(pattern, version).await;
+            // Not a pattern, install single plugin with dependencies
+            return self.install_with_dependencies(pattern, version).await;
         }
 
         println!(
@@ -327,7 +412,7 @@ impl PluginManager {
         let mut failed = Vec::new();
 
         for plugin in &matching {
-            match self.install_plugin(&plugin.id, version).await {
+            match self.install_with_dependencies(&plugin.id, version).await {
                 Ok(_) => {
                     installed += 1;
                 }
