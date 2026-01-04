@@ -24,6 +24,7 @@ adi-cli, rust, plugin-manager, plugin-registry, mcp-server, http-server, cross-p
 Plugins with CLI services can be invoked directly as subcommands:
 - `adi tasks <args>` - Task management (replaces `adi run adi.tasks <args>`)
 - `adi agent-loop <args>` - Agent loop operations (replaces `adi run adi.agent-loop <args>`)
+- `adi cocoon <args>` - Cocoon containerized worker (replaces `adi run adi.cocoon <args>`)
 
 Examples:
 - `adi tasks list` - List all tasks

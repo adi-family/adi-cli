@@ -79,6 +79,13 @@ enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+
+    /// Cocoon - containerized worker for remote command execution
+    Cocoon {
+        /// Arguments to pass to cocoon
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -135,6 +142,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Run { plugin_id, args } => cmd_run(plugin_id, args).await?,
         Commands::Tasks { args } => cmd_plugin_direct("adi.tasks", args).await?,
         Commands::AgentLoop { args } => cmd_plugin_direct("adi.agent-loop", args).await?,
+        Commands::Cocoon { args } => cmd_plugin_direct("adi.cocoon", args).await?,
     }
 
     Ok(())
