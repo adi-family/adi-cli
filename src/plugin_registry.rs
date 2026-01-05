@@ -178,6 +178,20 @@ impl PluginManager {
     pub async fn install_with_dependencies(&self, id: &str, version: Option<&str>) -> Result<()> {
         // Track what we're installing to avoid cycles
         let mut installing = HashSet::new();
+
+        // Check if already installed first to provide user feedback
+        let version_file = self.install_dir.join(id).join(".version");
+        if version_file.exists() {
+            let current_version = tokio::fs::read_to_string(&version_file).await?;
+            println!(
+                "{} {} v{} is already installed",
+                style("Info:").cyan(),
+                style(id).bold(),
+                current_version.trim()
+            );
+            return Ok(());
+        }
+
         self.install_recursive(id, version, &mut installing).await
     }
 
