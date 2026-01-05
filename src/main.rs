@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use adi_cli::completions::{self, CompletionShell};
 use adi_cli::http_server::{HttpServer, HttpServerConfig};
 use adi_cli::mcp_server::McpServer;
 use adi_cli::plugin_registry::PluginManager;
@@ -65,27 +66,23 @@ enum Commands {
         args: Vec<String>,
     },
 
-    /// Task management - dependency graphs and task tracking
-    Tasks {
-        /// Arguments to pass to task manager
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+    /// Generate shell completions
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: CompletionShell,
     },
 
-    /// Agent loop - autonomous LLM agents for code tasks
-    #[command(name = "agent-loop")]
-    AgentLoop {
-        /// Arguments to pass to agent loop
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
+    /// Initialize shell completions (writes to shell config)
+    Init {
+        /// Shell to initialize (auto-detects if not specified)
+        #[arg(value_enum)]
+        shell: Option<CompletionShell>,
     },
 
-    /// Cocoon - containerized worker for remote command execution
-    Cocoon {
-        /// Arguments to pass to cocoon
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    /// Plugin-provided commands (dynamically discovered from installed plugins)
+    #[command(external_subcommand)]
+    External(Vec<String>),
 }
 
 #[derive(Subcommand)]
@@ -130,6 +127,9 @@ enum PluginCommands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Auto-initialize completions on first run
+    completions::ensure_completions_installed::<Cli>("adi");
+
     let cli = Cli::parse();
 
     match cli.command {
@@ -140,9 +140,56 @@ async fn main() -> anyhow::Result<()> {
         Commands::Http { port, host } => cmd_http(port, host).await?,
         Commands::Services => cmd_services().await?,
         Commands::Run { plugin_id, args } => cmd_run(plugin_id, args).await?,
-        Commands::Tasks { args } => cmd_plugin_direct("adi.tasks", args).await?,
-        Commands::AgentLoop { args } => cmd_plugin_direct("adi.agent-loop", args).await?,
-        Commands::Cocoon { args } => cmd_plugin_direct("adi.cocoon", args).await?,
+        Commands::Completions { shell } => cmd_completions(shell),
+        Commands::Init { shell } => cmd_init(shell)?,
+        Commands::External(args) => cmd_external(args).await?,
+    }
+
+    Ok(())
+}
+
+fn cmd_completions(shell: CompletionShell) {
+    completions::generate_completions::<Cli>(shell, "adi");
+}
+
+fn cmd_init(shell: Option<CompletionShell>) -> anyhow::Result<()> {
+    let shell = shell
+        .or_else(completions::detect_shell)
+        .ok_or_else(|| anyhow::anyhow!(
+            "Could not detect shell. Please specify: adi init bash|zsh|fish"
+        ))?;
+
+    println!(
+        "{} shell completions for {}...",
+        style("Initializing").bold(),
+        style(format!("{:?}", shell)).cyan()
+    );
+
+    let path = completions::init_completions::<Cli>(shell, "adi")?;
+
+    println!();
+    println!(
+        "{} Completions installed to: {}",
+        style("Done!").green().bold(),
+        style(path.display()).dim()
+    );
+    println!();
+
+    match shell {
+        CompletionShell::Zsh => {
+            println!("Restart your shell or run:");
+            println!("  {}", style("source ~/.zshrc").cyan());
+        }
+        CompletionShell::Bash => {
+            println!("Restart your shell or run:");
+            println!("  {}", style("source ~/.bashrc").cyan());
+        }
+        CompletionShell::Fish => {
+            println!("Completions are active immediately in new fish sessions.");
+        }
+        _ => {
+            println!("Restart your shell to enable completions.");
+        }
     }
 
     Ok(())
@@ -207,9 +254,11 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             manager
                 .install_plugins_matching(&plugin_id, version.as_deref())
                 .await?;
+            regenerate_completions_quiet();
         }
         PluginCommands::Update { plugin_id } => {
             manager.update_plugin(&plugin_id).await?;
+            regenerate_completions_quiet();
         }
         PluginCommands::UpdateAll => {
             let installed = manager.list_installed().await?;
@@ -238,6 +287,7 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
 
             println!();
             println!("{}", style("Update complete!").green().bold());
+            regenerate_completions_quiet();
         }
         PluginCommands::Uninstall { plugin_id } => {
             let confirmed = Confirm::with_theme(&ColorfulTheme::default())
@@ -251,10 +301,25 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             }
 
             manager.uninstall_plugin(&plugin_id).await?;
+            regenerate_completions_quiet();
         }
     }
 
     Ok(())
+}
+
+/// Regenerate shell completions silently (called after plugin changes).
+fn regenerate_completions_quiet() {
+    if let Err(e) = completions::regenerate_completions::<Cli>("adi") {
+        // Only warn in debug builds, silently ignore in release
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "{} Failed to regenerate completions: {}",
+            style("Warning:").yellow(),
+            e
+        );
+        let _ = e;
+    }
 }
 
 async fn cmd_search(query: &str) -> anyhow::Result<()> {
@@ -481,21 +546,78 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
     }
 }
 
-async fn cmd_plugin_direct(plugin_id: &str, args: Vec<String>) -> anyhow::Result<()> {
-    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
-    runtime.load_all_plugins().await?;
+/// Handle external (plugin-provided) commands.
+///
+/// This function discovers CLI commands from installed plugin manifests,
+/// finds the matching plugin, loads it, and executes the command.
+async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
+    if args.is_empty() {
+        eprintln!("{} No command provided", style("Error:").red().bold());
+        std::process::exit(1);
+    }
 
-    // Check if plugin has CLI service
-    let service_id = format!("{}.cli", plugin_id);
-    if !runtime.has_service(&service_id) {
+    let command = args[0].clone();
+    let cmd_args: Vec<String> = args.into_iter().skip(1).collect();
+
+    // Create runtime to discover CLI commands from manifests
+    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
+
+    // Discover CLI commands (fast - only reads manifests, no binary loading)
+    let cli_commands = runtime.discover_cli_commands();
+
+    // Find plugin by command name or alias
+    let matching_plugin = cli_commands
+        .iter()
+        .find(|c| c.command == command || c.aliases.contains(&command));
+
+    let Some(plugin_cmd) = matching_plugin else {
+        // Command not found - show available commands
         eprintln!(
-            "{} Plugin '{}' not found or not installed",
+            "{} Unknown command: {}",
             style("Error:").red().bold(),
-            plugin_id
+            &command
+        );
+        eprintln!();
+
+        if cli_commands.is_empty() {
+            eprintln!("No plugin commands installed.");
+            eprintln!();
+            eprintln!(
+                "Install plugins with: {}",
+                style("adi plugin install <plugin-id>").cyan()
+            );
+        } else {
+            eprintln!("{}", style("Available plugin commands:").bold());
+            for cmd in &cli_commands {
+                let aliases = if cmd.aliases.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (aliases: {})", cmd.aliases.join(", "))
+                };
+                eprintln!(
+                    "  {} - {}{}",
+                    style(&cmd.command).cyan().bold(),
+                    cmd.description,
+                    style(aliases).dim()
+                );
+            }
+        }
+        std::process::exit(1);
+    };
+
+    let plugin_id = &plugin_cmd.plugin_id;
+
+    // Now scan and load only the needed plugin
+    if let Err(e) = runtime.scan_and_load_plugin(plugin_id).await {
+        eprintln!(
+            "{} Failed to load plugin '{}': {}",
+            style("Error:").red().bold(),
+            plugin_id,
+            e
         );
         eprintln!();
         eprintln!(
-            "Install with: {}",
+            "Try reinstalling: {}",
             style(format!("adi plugin install {}", plugin_id)).cyan()
         );
         std::process::exit(1);
@@ -504,7 +626,7 @@ async fn cmd_plugin_direct(plugin_id: &str, args: Vec<String>) -> anyhow::Result
     // Build CLI context
     let context = serde_json::json!({
         "command": plugin_id,
-        "args": args,
+        "args": cmd_args,
         "cwd": std::env::current_dir()?.to_string_lossy()
     });
 
@@ -517,10 +639,11 @@ async fn cmd_plugin_direct(plugin_id: &str, args: Vec<String>) -> anyhow::Result
             eprintln!(
                 "{} Failed to run {}: {}",
                 style("Error:").red().bold(),
-                plugin_id,
+                command,
                 e
             );
             std::process::exit(1);
         }
     }
 }
+
