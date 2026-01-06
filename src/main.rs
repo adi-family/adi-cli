@@ -44,8 +44,11 @@ enum Commands {
         query: String,
     },
 
-    /// List registered services from loaded plugins
-    Services,
+    /// Debug and diagnostic commands
+    Debug {
+        #[command(subcommand)]
+        command: DebugCommands,
+    },
 
     /// Run a plugin's CLI interface
     Run {
@@ -116,6 +119,12 @@ enum PluginCommands {
     },
 }
 
+#[derive(Subcommand)]
+enum DebugCommands {
+    /// List registered services from loaded plugins
+    Services,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Auto-initialize completions on first run
@@ -130,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::SelfUpdate { force } => adi_cli::self_update::self_update(force).await?,
         Commands::Plugin { command } => cmd_plugin(command).await?,
         Commands::Search { query } => cmd_search(&query).await?,
-        Commands::Services => cmd_services().await?,
+        Commands::Debug { command } => cmd_debug(command).await?,
         Commands::Run { plugin_id, args } => cmd_run(plugin_id, args).await?,
         Commands::Completions { shell } => cmd_completions(shell),
         Commands::Init { shell } => cmd_init(shell)?,
@@ -505,6 +514,13 @@ async fn cmd_search(query: &str) -> anyhow::Result<()> {
         )
     );
 
+    Ok(())
+}
+
+async fn cmd_debug(command: DebugCommands) -> anyhow::Result<()> {
+    match command {
+        DebugCommands::Services => cmd_services().await?,
+    }
     Ok(())
 }
 
