@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use console::style;
 use lib_client_github::{no_auth, Client, Release, ReleaseAsset};
+use lib_i18n_core::t;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,30 +21,29 @@ pub async fn check_for_updates() -> Result<Option<String>> {
 }
 
 pub async fn self_update(force: bool) -> Result<()> {
-    println!("{}", style("Checking for updates...").cyan());
+    println!("{}", style(t!("self-update-checking")).cyan());
 
     let latest_version = fetch_latest_version().await?;
 
     if !force && !version_is_newer(&latest_version, CURRENT_VERSION) {
         println!(
-            "{} You are already on the latest version ({})",
-            style("✓").green(),
-            CURRENT_VERSION
+            "{} {}",
+            style(t!("common-checkmark")).green(),
+            t!("self-update-already-latest", "version" => CURRENT_VERSION)
         );
         return Ok(());
     }
 
     println!(
-        "{} New version available: {} → {}",
-        style("→").cyan(),
-        CURRENT_VERSION,
-        latest_version
+        "{} {}",
+        style(t!("common-arrow")).cyan(),
+        t!("self-update-new-version", "current" => CURRENT_VERSION, "latest" => &latest_version)
     );
 
     let current_exe = env::current_exe()?;
     let platform = detect_platform()?;
 
-    println!("{} Downloading update...", style("→").cyan());
+    println!("{} {}", style(t!("common-arrow")).cyan(), t!("self-update-downloading"));
     let release = fetch_latest_release().await?;
     let asset = select_asset(&release, &platform)?;
 
@@ -53,19 +53,19 @@ pub async fn self_update(force: bool) -> Result<()> {
     let archive_path = temp_dir.join(&asset.name);
     download_file(&asset.browser_download_url, &archive_path).await?;
 
-    println!("{} Extracting update...", style("→").cyan());
+    println!("{} {}", style(t!("common-arrow")).cyan(), t!("self-update-extracting"));
     let binary_path = extract_binary(&archive_path, &temp_dir)?;
 
-    println!("{} Installing update...", style("→").cyan());
+    println!("{} {}", style(t!("common-arrow")).cyan(), t!("self-update-installing"));
     replace_binary(&binary_path, &current_exe)?;
 
     // Cleanup
     let _ = fs::remove_dir_all(&temp_dir);
 
     println!(
-        "{} Successfully updated to version {}",
-        style("✓").green(),
-        latest_version
+        "{} {}",
+        style(t!("common-checkmark")).green(),
+        t!("self-update-success", "version" => &latest_version)
     );
 
     Ok(())
@@ -110,7 +110,7 @@ async fn fetch_latest_release() -> Result<Release> {
                 tag.starts_with('v') && !tag.contains("indexer-") && !tag.contains("cli-")
             })
         })
-        .ok_or_else(|| anyhow!("No CLI manager release found"))?
+        .ok_or_else(|| anyhow!(t!("self-update-error-no-release")))?
         .clone();
 
     Ok(cli_release)
@@ -124,7 +124,7 @@ fn detect_platform() -> Result<String> {
     } else if cfg!(target_os = "windows") {
         "pc-windows-msvc"
     } else {
-        return Err(anyhow!("Unsupported operating system"));
+        return Err(anyhow!(t!("self-update-error-platform")));
     };
 
     let arch = if cfg!(target_arch = "x86_64") {
@@ -132,7 +132,7 @@ fn detect_platform() -> Result<String> {
     } else if cfg!(target_arch = "aarch64") {
         "aarch64"
     } else {
-        return Err(anyhow!("Unsupported architecture"));
+        return Err(anyhow!(t!("self-update-error-arch")));
     };
 
     Ok(format!("{}-{}", arch, os))
@@ -143,7 +143,7 @@ fn select_asset<'a>(release: &'a Release, platform: &str) -> Result<&'a ReleaseA
         .assets
         .iter()
         .find(|asset| asset.name.contains(platform))
-        .ok_or_else(|| anyhow!("No release asset found for platform: {}", platform))
+        .ok_or_else(|| anyhow!(t!("self-update-error-no-asset", "platform" => platform)))
 }
 
 async fn download_file(url: &str, dest: &Path) -> Result<()> {

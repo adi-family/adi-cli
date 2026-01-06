@@ -4,12 +4,20 @@ use adi_cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
 use clap::{Parser, Subcommand};
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Confirm};
+use lib_i18n_core::{init_global, t, I18n, ServiceRegistry as I18nServiceRegistry, ServiceDescriptor as I18nServiceDescriptor, ServiceHandle as I18nServiceHandle};
+use lib_plugin_host::ServiceRegistry as PluginServiceRegistry;
+use lib_plugin_abi::{ServiceError, ServiceHandle as PluginServiceHandle, ServiceDescriptor as PluginServiceDescriptor};
+use std::sync::Arc;
 
 #[derive(Parser)]
 #[command(name = "adi")]
 #[command(version)]
 #[command(about = "CLI for ADI family components", long_about = None)]
 struct Cli {
+    /// Override language (e.g., en-US, zh-CN). Can also be set via ADI_LANG env var.
+    #[arg(long, global = true)]
+    lang: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -114,6 +122,9 @@ async fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
+    // Initialize i18n system
+    initialize_i18n(cli.lang.as_deref()).await?;
+
     match cli.command {
         Commands::SelfUpdate { force } => adi_cli::self_update::self_update(force).await?,
         Commands::Plugin { command } => cmd_plugin(command).await?,
@@ -135,42 +146,104 @@ fn cmd_completions(shell: CompletionShell) {
 fn cmd_init(shell: Option<CompletionShell>) -> anyhow::Result<()> {
     let shell = shell
         .or_else(completions::detect_shell)
-        .ok_or_else(|| anyhow::anyhow!(
-            "Could not detect shell. Please specify: adi init bash|zsh|fish"
-        ))?;
+        .ok_or_else(|| anyhow::anyhow!(t!("completions-error-no-shell")))?;
 
     println!(
-        "{} shell completions for {}...",
-        style("Initializing").bold(),
-        style(format!("{:?}", shell)).cyan()
+        "{}",
+        t!("completions-init-start", "shell" => &format!("{:?}", shell))
     );
 
     let path = completions::init_completions::<Cli>(shell, "adi")?;
 
     println!();
     println!(
-        "{} Completions installed to: {}",
-        style("Done!").green().bold(),
-        style(path.display()).dim()
+        "{}",
+        t!("completions-init-done", "path" => &path.display().to_string())
     );
     println!();
 
     match shell {
         CompletionShell::Zsh => {
-            println!("Restart your shell or run:");
-            println!("  {}", style("source ~/.zshrc").cyan());
+            println!("{}", t!("completions-restart-zsh"));
         }
         CompletionShell::Bash => {
-            println!("Restart your shell or run:");
-            println!("  {}", style("source ~/.bashrc").cyan());
+            println!("{}", t!("completions-restart-bash"));
         }
         CompletionShell::Fish => {
-            println!("Completions are active immediately in new fish sessions.");
+            println!("{}", t!("completions-restart-fish"));
         }
         _ => {
-            println!("Restart your shell to enable completions.");
+            println!("{}", t!("completions-restart-generic"));
         }
     }
+
+    Ok(())
+}
+
+// Adapter to bridge lib-plugin-host ServiceRegistry to lib-i18n-core ServiceRegistry
+struct ServiceRegistryAdapter {
+    inner: Arc<PluginServiceRegistry>,
+}
+
+impl I18nServiceRegistry for ServiceRegistryAdapter {
+    fn list_services(&self) -> lib_i18n_core::Result<Vec<I18nServiceDescriptor>> {
+        Ok(self.inner.list()
+            .into_iter()
+            .map(|s: PluginServiceDescriptor| I18nServiceDescriptor::new(s.id.as_str().to_string()))
+            .collect())
+    }
+
+    fn lookup_service(&self, service_id: &str) -> lib_i18n_core::Result<Box<dyn I18nServiceHandle>> {
+        self.inner
+            .lookup(service_id)
+            .map(|handle| Box::new(ServiceHandleAdapter { inner: handle }) as Box<dyn I18nServiceHandle>)
+            .ok_or_else(|| lib_i18n_core::I18nError::ServiceRegistryError(format!("Service not found: {}", service_id)))
+    }
+}
+
+struct ServiceHandleAdapter {
+    inner: PluginServiceHandle,
+}
+
+impl I18nServiceHandle for ServiceHandleAdapter {
+    fn invoke(&self, method: &str, args: &str) -> lib_i18n_core::Result<String> {
+        unsafe {
+            self.inner
+                .invoke(method, args)
+                .map_err(|e: ServiceError| lib_i18n_core::I18nError::ServiceInvokeError(e.to_string()))
+        }
+    }
+}
+
+async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
+    // Detect language from --lang flag, ADI_LANG env var, or LANG env var
+    let user_lang = lang_override
+        .map(|s| s.to_string())
+        .or_else(|| std::env::var("ADI_LANG").ok())
+        .or_else(|| {
+            std::env::var("LANG")
+                .ok()
+                .and_then(|l| l.split('.').next().map(|s| s.replace('_', "-")))
+        })
+        .unwrap_or_else(|| "en-US".to_string());
+
+    // Create plugin runtime and load translation plugin
+    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
+    let translation_id = format!("adi.cli.{}", user_lang);
+
+    // Try user's language, fallback to English
+    if runtime.scan_and_load_plugin(&translation_id).await.is_err() {
+        let _ = runtime.scan_and_load_plugin("adi.cli.en-US").await;
+    }
+
+    // Initialize i18n with service registry (via adapter)
+    let adapter = Arc::new(ServiceRegistryAdapter {
+        inner: runtime.service_registry(),
+    });
+    let mut i18n = I18n::new(adapter).with_namespace("cli");
+    i18n.discover_translations()?;
+    i18n.set_language(&user_lang)?;
+    init_global(i18n);
 
     Ok(())
 }
@@ -183,13 +256,13 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             cmd_search(&query).await?;
         }
         PluginCommands::List => {
-            println!("{}", style("Available Plugins:").bold());
+            println!("{}", style(t!("plugin-list-title")).bold());
             println!();
 
             let plugins = manager.list_plugins().await?;
 
             if plugins.is_empty() {
-                println!("  No plugins available in the registry.");
+                println!("  {}", t!("plugin-list-empty"));
                 return Ok(());
             }
 
@@ -207,18 +280,15 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             }
         }
         PluginCommands::Installed => {
-            println!("{}", style("Installed Plugins:").bold());
+            println!("{}", style(t!("plugin-installed-title")).bold());
             println!();
 
             let installed = manager.list_installed().await?;
 
             if installed.is_empty() {
-                println!("  No plugins installed.");
+                println!("  {}", t!("plugin-installed-empty"));
                 println!();
-                println!(
-                    "  Install plugins with: {}",
-                    style("adi plugin install <plugin-id>").cyan()
-                );
+                println!("  {}", t!("plugin-installed-hint"));
                 return Ok(());
             }
 
@@ -244,39 +314,37 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             let installed = manager.list_installed().await?;
 
             if installed.is_empty() {
-                println!("No plugins installed.");
+                println!("{}", t!("plugin-list-empty"));
                 return Ok(());
             }
 
             println!(
-                "{} {} plugin(s)...",
-                style("Updating").bold(),
-                installed.len()
+                "{}",
+                t!("plugin-update-all-start", "count" => &installed.len().to_string())
             );
 
             for (id, _) in installed {
                 if let Err(e) = manager.update_plugin(&id).await {
                     eprintln!(
-                        "{} Failed to update {}: {}",
-                        style("Warning:").yellow(),
-                        id,
-                        e
+                        "{} {}",
+                        style(t!("common-warning-prefix")).yellow(),
+                        t!("plugin-update-all-warning", "id" => &id, "error" => &e.to_string())
                     );
                 }
             }
 
             println!();
-            println!("{}", style("Update complete!").green().bold());
+            println!("{}", style(t!("plugin-update-all-done")).green().bold());
             regenerate_completions_quiet();
         }
         PluginCommands::Uninstall { plugin_id } => {
             let confirmed = Confirm::with_theme(&ColorfulTheme::default())
-                .with_prompt(format!("Uninstall plugin {}?", plugin_id))
+                .with_prompt(t!("plugin-uninstall-prompt", "id" => &plugin_id))
                 .default(false)
                 .interact()?;
 
             if !confirmed {
-                println!("Cancelled.");
+                println!("{}", t!("plugin-uninstall-cancelled"));
                 return Ok(());
             }
 
@@ -305,22 +373,18 @@ fn regenerate_completions_quiet() {
 async fn cmd_search(query: &str) -> anyhow::Result<()> {
     let manager = PluginManager::new();
 
-    println!(
-        "{} \"{}\"...",
-        style("Searching for").bold(),
-        style(query).cyan()
-    );
+    println!("{}", t!("search-searching", "query" => query));
     println!();
 
     let results = manager.search(query).await?;
 
     if results.packages.is_empty() && results.plugins.is_empty() {
-        println!("  No results found.");
+        println!("  {}", t!("search-no-results"));
         return Ok(());
     }
 
     if !results.packages.is_empty() {
-        println!("{}", style("Packages:").bold().underlined());
+        println!("{}", style(t!("search-packages-title")).bold().underlined());
         for pkg in &results.packages {
             println!(
                 "  {} {} - {}",
@@ -336,7 +400,7 @@ async fn cmd_search(query: &str) -> anyhow::Result<()> {
     }
 
     if !results.plugins.is_empty() {
-        println!("{}", style("Plugins:").bold().underlined());
+        println!("{}", style(t!("search-plugins-title")).bold().underlined());
         for plugin in &results.plugins {
             println!(
                 "  {} {} - {} [{}]",
@@ -353,9 +417,11 @@ async fn cmd_search(query: &str) -> anyhow::Result<()> {
 
     println!();
     println!(
-        "Found {} package(s) and {} plugin(s)",
-        results.packages.len(),
-        results.plugins.len()
+        "{}",
+        t!("search-results-summary",
+            "packages" => &results.packages.len().to_string(),
+            "plugins" => &results.plugins.len().to_string()
+        )
     );
 
     Ok(())
@@ -368,16 +434,13 @@ async fn cmd_services() -> anyhow::Result<()> {
     let services = runtime.list_services();
 
     if services.is_empty() {
-        println!("No services registered.");
+        println!("{}", t!("services-empty"));
         println!();
-        println!(
-            "Install plugins to add services: {}",
-            style("adi plugin install <id>").cyan()
-        );
+        println!("{}", t!("services-hint"));
         return Ok(());
     }
 
-    println!("{}", style("Registered Services:").bold());
+    println!("{}", style(t!("services-title")).bold());
     println!();
 
     for service in services {
@@ -408,16 +471,13 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
     let plugin_id = match plugin_id {
         Some(id) => id,
         None => {
-            println!("{}", style("Runnable Plugins:").bold());
+            println!("{}", style(t!("run-title")).bold());
             println!();
 
             if runnable.is_empty() {
-                println!("  No plugins with CLI interface installed.");
+                println!("  {}", t!("run-empty"));
                 println!();
-                println!(
-                    "  Install plugins with: {}",
-                    style("adi plugin install <plugin-id>").cyan()
-                );
+                println!("  {}", t!("run-hint-install"));
             } else {
                 for (id, description) in &runnable {
                     println!(
@@ -427,10 +487,7 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
                     );
                 }
                 println!();
-                println!(
-                    "Run a plugin with: {}",
-                    style("adi run <plugin-id> [args...]").cyan()
-                );
+                println!("{}", t!("run-hint-usage"));
             }
             return Ok(());
         }
@@ -439,15 +496,15 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
     // Check if plugin has CLI service
     if !runnable.iter().any(|(id, _)| id == &plugin_id) {
         eprintln!(
-            "{} Plugin '{}' not found or has no CLI interface",
-            style("Error:").red().bold(),
-            plugin_id
+            "{} {}",
+            style(t!("common-error-prefix")).red().bold(),
+            t!("run-error-not-found", "id" => &plugin_id)
         );
         eprintln!();
         if runnable.is_empty() {
-            eprintln!("No runnable plugins installed.");
+            eprintln!("{}", t!("run-error-no-plugins"));
         } else {
-            eprintln!("Runnable plugins:");
+            eprintln!("{}", t!("run-error-available"));
             for (id, _) in &runnable {
                 eprintln!("  - {}", id);
             }
@@ -469,9 +526,9 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
         }
         Err(e) => {
             eprintln!(
-                "{} Failed to run plugin: {}",
-                style("Error:").red().bold(),
-                e
+                "{} {}",
+                style(t!("common-error-prefix")).red().bold(),
+                t!("run-error-failed", "error" => &e.to_string())
             );
             std::process::exit(1);
         }
@@ -484,7 +541,7 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
 /// finds the matching plugin, loads it, and executes the command.
 async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
     if args.is_empty() {
-        eprintln!("{} No command provided", style("Error:").red().bold());
+        eprintln!("{} {}", style(t!("common-error-prefix")).red().bold(), t!("external-error-no-command"));
         std::process::exit(1);
     }
 
@@ -505,21 +562,18 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
     let Some(plugin_cmd) = matching_plugin else {
         // Command not found - show available commands
         eprintln!(
-            "{} Unknown command: {}",
-            style("Error:").red().bold(),
-            &command
+            "{} {}",
+            style(t!("common-error-prefix")).red().bold(),
+            t!("external-error-unknown", "command" => &command)
         );
         eprintln!();
 
         if cli_commands.is_empty() {
-            eprintln!("No plugin commands installed.");
+            eprintln!("{}", t!("external-error-no-installed"));
             eprintln!();
-            eprintln!(
-                "Install plugins with: {}",
-                style("adi plugin install <plugin-id>").cyan()
-            );
+            eprintln!("{}", t!("external-hint-install"));
         } else {
-            eprintln!("{}", style("Available plugin commands:").bold());
+            eprintln!("{}", style(t!("external-available-title")).bold());
             for cmd in &cli_commands {
                 let aliases = if cmd.aliases.is_empty() {
                     String::new()
@@ -542,16 +596,12 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
     // Now scan and load only the needed plugin
     if let Err(e) = runtime.scan_and_load_plugin(plugin_id).await {
         eprintln!(
-            "{} Failed to load plugin '{}': {}",
-            style("Error:").red().bold(),
-            plugin_id,
-            e
+            "{} {}",
+            style(t!("common-error-prefix")).red().bold(),
+            t!("external-error-load-failed", "id" => plugin_id, "error" => &e.to_string())
         );
         eprintln!();
-        eprintln!(
-            "Try reinstalling: {}",
-            style(format!("adi plugin install {}", plugin_id)).cyan()
-        );
+        eprintln!("{}", t!("external-hint-reinstall", "id" => plugin_id));
         std::process::exit(1);
     }
 
@@ -569,10 +619,9 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
         }
         Err(e) => {
             eprintln!(
-                "{} Failed to run {}: {}",
-                style("Error:").red().bold(),
-                command,
-                e
+                "{} {}",
+                style(t!("common-error-prefix")).red().bold(),
+                t!("external-error-run-failed", "command" => &command, "error" => &e.to_string())
             );
             std::process::exit(1);
         }

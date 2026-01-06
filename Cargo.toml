@@ -26,7 +26,8 @@ dirs = "6.0.0"
 reqwest = { version = "0.13.1", features = ["json", "native-tls-vendored", "stream"] }
 flate2 = "1"
 tar = "0.4"
-zip = "7.0.0"
+zip = "0.6"
+tracing = "0.1"
 
 # GitHub API
 lib-client-github = { path = "../lib-client-github" }
@@ -36,3 +37,6 @@ lib-plugin-registry = { path = "../lib-plugin-registry" }
 lib-plugin-host = { path = "../lib-plugin-host" }
 lib-plugin-abi = { path = "../lib-plugin-abi" }
 lib-plugin-manifest = { path = "../lib-plugin-manifest" }
+
+# Internationalization
+lib-i18n-core = { path = "../lib-i18n-core" }

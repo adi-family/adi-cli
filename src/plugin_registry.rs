@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
+use lib_i18n_core::t;
 use lib_plugin_registry::{PluginEntry, RegistryClient, SearchKind, SearchResults};
 
 use crate::error::Result;
@@ -95,11 +96,12 @@ impl PluginManager {
             })?;
 
         println!(
-            "{} {} v{} for {}...",
-            style("Downloading").cyan(),
-            style(id).bold(),
-            info.version,
-            platform
+            "{}",
+            t!("plugin-install-downloading",
+                "id" => id,
+                "version" => &info.version,
+                "platform" => &platform
+            )
         );
 
         // Create progress bar
@@ -127,9 +129,8 @@ impl PluginManager {
         tokio::fs::create_dir_all(&plugin_dir).await?;
 
         println!(
-            "{} to {}...",
-            style("Extracting").cyan(),
-            plugin_dir.display()
+            "{}",
+            t!("plugin-install-extracting", "path" => &plugin_dir.display().to_string())
         );
 
         // Extract tarball
@@ -165,10 +166,9 @@ impl PluginManager {
         }
 
         println!(
-            "{} {} v{} installed successfully!",
-            style("Success:").green().bold(),
-            id,
-            info.version
+            "{} {}",
+            style(t!("common-success-prefix")).green().bold(),
+            t!("plugin-install-success", "id" => id, "version" => &info.version)
         );
 
         Ok(())
@@ -184,10 +184,12 @@ impl PluginManager {
         if version_file.exists() {
             let current_version = tokio::fs::read_to_string(&version_file).await?;
             println!(
-                "{} {} v{} is already installed",
-                style("Info:").cyan(),
-                style(id).bold(),
-                current_version.trim()
+                "{} {}",
+                style(t!("common-info-prefix")).cyan(),
+                t!("plugin-install-already-installed",
+                    "id" => id,
+                    "version" => current_version.trim()
+                )
             );
             return Ok(());
         }
@@ -224,9 +226,8 @@ impl PluginManager {
         for dep in deps {
             if !installing.contains(&dep) {
                 println!(
-                    "{} Installing dependency: {}",
-                    style("->").cyan(),
-                    style(&dep).bold()
+                    "{}",
+                    t!("plugin-install-dependency", "id" => &dep)
                 );
                 // Recursively install dependency
                 Box::pin(self.install_recursive(&dep, None, installing)).await?;
@@ -282,14 +283,14 @@ impl PluginManager {
             )));
         }
 
-        println!("{} {}...", style("Uninstalling").cyan(), id);
+        println!("{}", t!("plugin-uninstall-progress", "id" => id));
 
         tokio::fs::remove_dir_all(&plugin_dir).await?;
 
         println!(
-            "{} {} uninstalled successfully!",
-            style("Success:").green().bold(),
-            id
+            "{} {}",
+            style(t!("common-success-prefix")).green().bold(),
+            t!("plugin-uninstall-success", "id" => id)
         );
 
         Ok(())
@@ -310,20 +311,20 @@ impl PluginManager {
 
         if current_version.trim() == latest.version {
             println!(
-                "{} {} is already at latest version ({})",
-                style("Info:").cyan(),
-                id,
-                latest.version
+                "{} {}",
+                style(t!("common-info-prefix")).cyan(),
+                t!("plugin-update-already-latest", "id" => id, "version" => &latest.version)
             );
             return Ok(());
         }
 
         println!(
-            "{} {} from {} to {}...",
-            style("Updating").cyan(),
-            id,
-            current_version.trim(),
-            latest.version
+            "{}",
+            t!("plugin-update-available",
+                "id" => id,
+                "current" => current_version.trim(),
+                "latest" => &latest.version
+            )
         );
 
         // Remove old version directory but keep plugin root
@@ -375,9 +376,8 @@ impl PluginManager {
         }
 
         println!(
-            "{} pattern \"{}\"...",
-            style("Searching for plugins matching").bold(),
-            style(pattern).cyan()
+            "{}",
+            t!("plugin-install-pattern-searching", "pattern" => pattern)
         );
 
         // Fetch all available plugins
@@ -391,17 +391,16 @@ impl PluginManager {
 
         if matching.is_empty() {
             println!(
-                "{} No plugins found matching pattern \"{}\"",
-                style("Warning:").yellow(),
-                pattern
+                "{} {}",
+                style(t!("common-warning-prefix")).yellow(),
+                t!("plugin-install-pattern-none", "pattern" => pattern)
             );
             return Ok(());
         }
 
         println!(
-            "{} {} plugin(s) matching pattern",
-            style("Found").green().bold(),
-            matching.len()
+            "{}",
+            t!("plugin-install-pattern-found", "count" => &matching.len().to_string())
         );
         println!();
 
@@ -416,9 +415,8 @@ impl PluginManager {
 
         println!();
         println!(
-            "{} {} plugin(s)...",
-            style("Installing").bold(),
-            matching.len()
+            "{}",
+            t!("plugin-install-pattern-installing", "count" => &matching.len().to_string())
         );
         println!();
 
@@ -444,14 +442,14 @@ impl PluginManager {
         }
 
         println!(
-            "{} {} plugin(s) installed successfully!",
-            style("Success:").green().bold(),
-            installed
+            "{} {}",
+            style(t!("common-success-prefix")).green().bold(),
+            t!("plugin-install-pattern-success", "count" => &installed.to_string())
         );
 
         if !failed.is_empty() {
             println!();
-            println!("{} Failed to install:", style("Warning:").yellow());
+            println!("{} {}", style(t!("common-warning-prefix")).yellow(), t!("plugin-install-pattern-failed"));
             for id in failed {
                 println!("  - {}", id);
             }
