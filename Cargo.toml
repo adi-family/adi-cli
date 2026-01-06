@@ -12,21 +12,21 @@ path = "src/main.rs"
 
 [dependencies]
 thiserror = "2"
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1.49", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.9"
-clap = { version = "4.0", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4"
-indicatif = "0.17"
-console = "0.15"
-dialoguer = "0.11"
+indicatif = "0.18.3"
+console = "0.16.2"
+dialoguer = "0.12.0"
 anyhow = "1.0"
-dirs = "5"
-reqwest = { version = "0.12", features = ["json", "native-tls-vendored", "stream"] }
+dirs = "6.0.0"
+reqwest = { version = "0.13.1", features = ["json", "native-tls-vendored", "stream"] }
 flate2 = "1"
 tar = "0.4"
-zip = "0.6"
+zip = "7.0.0"
 
 # GitHub API
 lib-client-github = { path = "../lib-client-github" }
@@ -36,9 +36,3 @@ lib-plugin-registry = { path = "../lib-plugin-registry" }
 lib-plugin-host = { path = "../lib-plugin-host" }
 lib-plugin-abi = { path = "../lib-plugin-abi" }
 lib-plugin-manifest = { path = "../lib-plugin-manifest" }
-
-# HTTP server for plugin-provided routes
-axum = "0.8"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }

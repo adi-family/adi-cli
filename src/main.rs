@@ -1,8 +1,4 @@
-use std::sync::Arc;
-
 use adi_cli::completions::{self, CompletionShell};
-use adi_cli::http_server::{HttpServer, HttpServerConfig};
-use adi_cli::mcp_server::McpServer;
 use adi_cli::plugin_registry::PluginManager;
 use adi_cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
 use clap::{Parser, Subcommand};
@@ -37,20 +33,6 @@ enum Commands {
     Search {
         /// Search query
         query: String,
-    },
-
-    /// Start MCP server (JSON-RPC over stdio)
-    Mcp,
-
-    /// Start HTTP server for plugin-provided routes
-    Http {
-        /// Port to listen on
-        #[arg(short, long, default_value = "8080")]
-        port: u16,
-
-        /// Host to bind to
-        #[arg(long, default_value = "127.0.0.1")]
-        host: String,
     },
 
     /// List registered services from loaded plugins
@@ -136,8 +118,6 @@ async fn main() -> anyhow::Result<()> {
         Commands::SelfUpdate { force } => adi_cli::self_update::self_update(force).await?,
         Commands::Plugin { command } => cmd_plugin(command).await?,
         Commands::Search { query } => cmd_search(&query).await?,
-        Commands::Mcp => cmd_mcp().await?,
-        Commands::Http { port, host } => cmd_http(port, host).await?,
         Commands::Services => cmd_services().await?,
         Commands::Run { plugin_id, args } => cmd_run(plugin_id, args).await?,
         Commands::Completions { shell } => cmd_completions(shell),
@@ -377,54 +357,6 @@ async fn cmd_search(query: &str) -> anyhow::Result<()> {
         results.packages.len(),
         results.plugins.len()
     );
-
-    Ok(())
-}
-
-async fn cmd_mcp() -> anyhow::Result<()> {
-    // Initialize tracing for logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::WARN.into()),
-        )
-        .with_writer(std::io::stderr)
-        .init();
-
-    // Create plugin runtime and load plugins
-    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
-    runtime.load_all_plugins().await?;
-
-    // Create and run MCP server
-    #[allow(clippy::arc_with_non_send_sync)]
-    let runtime_arc = Arc::new(runtime);
-    let mut server = McpServer::new(runtime_arc);
-    server.run().await?;
-
-    Ok(())
-}
-
-async fn cmd_http(port: u16, host: String) -> anyhow::Result<()> {
-    // Initialize tracing for logging
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::INFO.into()),
-        )
-        .init();
-
-    let config = HttpServerConfig {
-        port,
-        host: host.clone(),
-    };
-
-    println!(
-        "{}",
-        style(format!("Starting HTTP server on {}:{}", host, port)).bold()
-    );
-
-    let server = HttpServer::new(config);
-    server.run().await?;
 
     Ok(())
 }

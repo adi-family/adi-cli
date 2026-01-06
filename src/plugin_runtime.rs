@@ -1,18 +1,30 @@
 //! Plugin runtime for loading and managing plugins.
 //!
 //! Provides a unified interface for loading plugins, registering services,
-//! and dispatching requests to plugin-provided MCP/HTTP/CLI handlers.
+//! and dispatching requests to plugin-provided HTTP/CLI handlers.
 
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-use lib_plugin_abi::{
-    ServiceDescriptor, SERVICE_CLI_COMMANDS, SERVICE_HTTP_ROUTES, SERVICE_MCP_RESOURCES,
-    SERVICE_MCP_TOOLS,
-};
+use lib_plugin_abi::{ServiceDescriptor, SERVICE_CLI_COMMANDS, SERVICE_HTTP_ROUTES};
 use lib_plugin_host::{PluginConfig, PluginHost, ServiceRegistry};
+use lib_plugin_manifest::PluginManifest;
 
 use crate::error::Result;
+
+/// A discovered CLI command from a plugin manifest.
+/// This is discovered by scanning plugin.toml files without loading binaries.
+#[derive(Debug, Clone)]
+pub struct PluginCliCommand {
+    /// The command name (e.g., "tasks", "lint")
+    pub command: String,
+    /// The plugin ID that provides this command
+    pub plugin_id: String,
+    /// Human-readable description
+    pub description: String,
+    /// Optional short aliases
+    pub aliases: Vec<String>,
+}
 
 /// Plugin runtime configuration.
 #[derive(Debug, Clone)]
@@ -119,6 +131,15 @@ impl PluginRuntime {
         Ok(())
     }
 
+    /// Scan installed plugins and load a specific plugin by ID.
+    /// This is useful when you only want to load one plugin without loading all.
+    pub async fn scan_and_load_plugin(&self, plugin_id: &str) -> Result<()> {
+        let mut host = self.host.write().unwrap();
+        host.scan_installed()?;
+        host.enable(plugin_id)?;
+        Ok(())
+    }
+
     /// Unload a plugin.
     pub fn unload_plugin(&self, plugin_id: &str) -> Result<()> {
         self.host.write().unwrap().disable(plugin_id)?;
@@ -143,26 +164,6 @@ impl PluginRuntime {
     /// Check if a service is available.
     pub fn has_service(&self, service_id: &str) -> bool {
         self.service_registry().has_service(service_id)
-    }
-
-    /// List plugins that provide MCP tools.
-    pub fn list_mcp_tool_providers(&self) -> Vec<String> {
-        self.service_registry()
-            .list()
-            .iter()
-            .filter(|s| s.id.as_str() == SERVICE_MCP_TOOLS)
-            .map(|s| s.provider_id.as_str().to_string())
-            .collect()
-    }
-
-    /// List plugins that provide MCP resources.
-    pub fn list_mcp_resource_providers(&self) -> Vec<String> {
-        self.service_registry()
-            .list()
-            .iter()
-            .filter(|s| s.id.as_str() == SERVICE_MCP_RESOURCES)
-            .map(|s| s.provider_id.as_str().to_string())
-            .collect()
     }
 
     /// List plugins that provide HTTP routes.
@@ -199,63 +200,6 @@ impl PluginRuntime {
                 (plugin_id.to_string(), s.description.as_str().to_string())
             })
             .collect()
-    }
-
-    /// Call an MCP tool. Returns JSON result string.
-    pub fn call_mcp_tool(&self, tool_name: &str, args: &str) -> Result<String> {
-        let registry = self.service_registry();
-        let handle = registry.lookup(SERVICE_MCP_TOOLS).ok_or_else(|| {
-            crate::error::InstallerError::PluginNotFound {
-                id: SERVICE_MCP_TOOLS.to_string(),
-            }
-        })?;
-
-        let result = unsafe {
-            handle.invoke(
-                "call_tool",
-                &format!(r#"{{"name":"{}","args":{}}}"#, tool_name, args),
-            )?
-        };
-        Ok(result)
-    }
-
-    /// List MCP tools. Returns JSON array of tools.
-    pub fn list_mcp_tools(&self) -> Result<String> {
-        let registry = self.service_registry();
-        let handle = registry.lookup(SERVICE_MCP_TOOLS).ok_or_else(|| {
-            crate::error::InstallerError::PluginNotFound {
-                id: SERVICE_MCP_TOOLS.to_string(),
-            }
-        })?;
-
-        let result = unsafe { handle.invoke("list_tools", "{}")? };
-        Ok(result)
-    }
-
-    /// Read an MCP resource. Returns JSON resource content.
-    pub fn read_mcp_resource(&self, uri: &str) -> Result<String> {
-        let registry = self.service_registry();
-        let handle = registry.lookup(SERVICE_MCP_RESOURCES).ok_or_else(|| {
-            crate::error::InstallerError::PluginNotFound {
-                id: SERVICE_MCP_RESOURCES.to_string(),
-            }
-        })?;
-
-        let result = unsafe { handle.invoke("read_resource", &format!(r#"{{"uri":"{}"}}"#, uri))? };
-        Ok(result)
-    }
-
-    /// List MCP resources. Returns JSON array of resources.
-    pub fn list_mcp_resources(&self) -> Result<String> {
-        let registry = self.service_registry();
-        let handle = registry.lookup(SERVICE_MCP_RESOURCES).ok_or_else(|| {
-            crate::error::InstallerError::PluginNotFound {
-                id: SERVICE_MCP_RESOURCES.to_string(),
-            }
-        })?;
-
-        let result = unsafe { handle.invoke("list_resources", "{}")? };
-        Ok(result)
     }
 
     /// Handle an HTTP request. Returns JSON response.
@@ -315,6 +259,97 @@ impl PluginRuntime {
 
         let result = unsafe { handle.invoke("list_commands", "{}")? };
         Ok(result)
+    }
+
+    /// Discover CLI commands from installed plugin manifests.
+    ///
+    /// This scans plugin.toml files in the plugins directory WITHOUT loading
+    /// plugin binaries, making it fast for CLI command discovery.
+    ///
+    /// Returns a list of CLI commands with their plugin IDs, descriptions, and aliases.
+    pub fn discover_cli_commands(&self) -> Vec<PluginCliCommand> {
+        let mut commands = Vec::new();
+
+        // Scan plugins directory for plugin.toml files
+        let plugins_dir = &self.config.plugins_dir;
+        if !plugins_dir.exists() {
+            return commands;
+        }
+
+        // Each plugin is in a subdirectory: plugins/<plugin-id>/<version>/plugin.toml
+        // or plugins/<plugin-id>/.version pointing to current version
+        if let Ok(entries) = std::fs::read_dir(plugins_dir) {
+            for entry in entries.flatten() {
+                let plugin_dir = entry.path();
+                if !plugin_dir.is_dir() {
+                    continue;
+                }
+
+                // Try to find plugin.toml in versioned subdirectory
+                let manifest_path = Self::find_plugin_manifest(&plugin_dir);
+                if let Some(manifest_path) = manifest_path {
+                    if let Ok(manifest) = PluginManifest::from_file(&manifest_path) {
+                        if let Some(cli) = &manifest.cli {
+                            commands.push(PluginCliCommand {
+                                command: cli.command.clone(),
+                                plugin_id: manifest.plugin.id.clone(),
+                                description: cli.description.clone(),
+                                aliases: cli.aliases.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        commands
+    }
+
+    /// Find the plugin.toml manifest in a plugin directory.
+    /// Handles versioned directories (e.g., plugins/adi.tasks/0.8.8/plugin.toml)
+    fn find_plugin_manifest(plugin_dir: &PathBuf) -> Option<PathBuf> {
+        // First, check for .version file to get current version
+        let version_file = plugin_dir.join(".version");
+        if version_file.exists() {
+            if let Ok(version) = std::fs::read_to_string(&version_file) {
+                let version = version.trim();
+                let versioned_manifest = plugin_dir.join(version).join("plugin.toml");
+                if versioned_manifest.exists() {
+                    return Some(versioned_manifest);
+                }
+            }
+        }
+
+        // Fallback: check for plugin.toml directly in plugin dir
+        let direct_manifest = plugin_dir.join("plugin.toml");
+        if direct_manifest.exists() {
+            return Some(direct_manifest);
+        }
+
+        // Fallback: scan subdirectories for plugin.toml
+        if let Ok(entries) = std::fs::read_dir(plugin_dir) {
+            for entry in entries.flatten() {
+                let subdir = entry.path();
+                if subdir.is_dir() {
+                    let manifest = subdir.join("plugin.toml");
+                    if manifest.exists() {
+                        return Some(manifest);
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Find a plugin ID by command name or alias.
+    /// Returns the plugin_id if found.
+    pub fn find_plugin_by_command(&self, command: &str) -> Option<String> {
+        let commands = self.discover_cli_commands();
+        commands
+            .iter()
+            .find(|c| c.command == command || c.aliases.contains(&command.to_string()))
+            .map(|c| c.plugin_id.clone())
     }
 }
 
