@@ -1,0 +1,22 @@
+[plugin]
+id = "adi.cli.uk-UA"
+name = "ADI CLI - Українська"
+version = "1.0.0"
+type = "translation"
+author = "ADI Team"
+description = "Ukrainian translations for ADI CLI"
+min_host_version = "0.8.0"
+
+[translation]
+translates = "adi.cli"
+language = "uk-UA"
+language_name = "Українська"
+namespace = "cli"
+
+[[provides]]
+id = "adi.i18n.cli.uk-UA"
+version = "1.0.0"
+description = "Ukrainian translations for CLI"
+
+[binary]
+name = "adi_cli_lang_uk_ua"

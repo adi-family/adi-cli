@@ -1,0 +1,22 @@
+[plugin]
+id = "adi.cli.en-US"
+name = "ADI CLI - English"
+version = "1.0.0"
+type = "translation"
+author = "ADI Team"
+description = "English translations for ADI CLI"
+min_host_version = "0.8.0"
+
+[translation]
+translates = "adi.cli"
+language = "en-US"
+language_name = "English (United States)"
+namespace = "cli"
+
+[[provides]]
+id = "adi.i18n.cli.en-US"
+version = "1.0.0"
+description = "English translations for CLI"
+
+[binary]
+name = "adi_cli_lang_en"

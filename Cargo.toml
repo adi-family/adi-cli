@@ -1,6 +1,6 @@
 [package]
 name = "adi-cli"
-version = "0.8.8"
+version = "0.8.9"
 edition = "2021"
 license = "BSL-1.0"
 description = "CLI for ADI family components - component installer and manager"

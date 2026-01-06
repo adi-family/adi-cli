@@ -1,0 +1,22 @@
+[plugin]
+id = "adi.cli.zh-CN"
+name = "ADI CLI - 中文"
+version = "1.0.0"
+type = "translation"
+author = "ADI Team"
+description = "Chinese (Simplified) translations for ADI CLI"
+min_host_version = "0.8.0"
+
+[translation]
+translates = "adi.cli"
+language = "zh-CN"
+language_name = "中文 (简体)"
+namespace = "cli"
+
+[[provides]]
+id = "adi.i18n.cli.zh-CN"
+version = "1.0.0"
+description = "Chinese translations for CLI"
+
+[binary]
+name = "adi_cli_lang_zh_cn"
