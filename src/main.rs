@@ -1,9 +1,10 @@
 use adi_cli::completions::{self, CompletionShell};
 use adi_cli::plugin_registry::PluginManager;
 use adi_cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
+use adi_cli::user_config::UserConfig;
 use clap::{Parser, Subcommand};
 use console::style;
-use dialoguer::{theme::ColorfulTheme, Confirm};
+use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use lib_i18n_core::{init_global, t, I18n, ServiceRegistry as I18nServiceRegistry, ServiceDescriptor as I18nServiceDescriptor, ServiceHandle as I18nServiceHandle};
 use lib_plugin_host::ServiceRegistry as PluginServiceRegistry;
 use lib_plugin_abi::{ServiceError, ServiceHandle as PluginServiceHandle, ServiceDescriptor as PluginServiceDescriptor};
@@ -215,25 +216,105 @@ impl I18nServiceHandle for ServiceHandleAdapter {
     }
 }
 
+/// Available languages with display names
+const AVAILABLE_LANGUAGES: &[(&str, &str)] = &[
+    ("en-US", "English"),
+    ("zh-CN", "中文 (简体)"),
+    ("uk-UA", "Українська"),
+    ("es-ES", "Español"),
+    ("fr-FR", "Français"),
+    ("de-DE", "Deutsch"),
+    ("ja-JP", "日本語"),
+    ("ko-KR", "한국어"),
+];
+
+/// Prompt user to select their preferred language interactively
+fn prompt_language_selection() -> anyhow::Result<String> {
+    println!();
+    println!("{}", style("Welcome to ADI! 🎉").bold().cyan());
+    println!();
+    println!("Please select your preferred language:");
+    println!();
+
+    let items: Vec<String> = AVAILABLE_LANGUAGES
+        .iter()
+        .map(|(code, name)| format!("{} ({})", name, code))
+        .collect();
+
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .items(&items)
+        .default(0)
+        .interact()?;
+
+    Ok(AVAILABLE_LANGUAGES[selection].0.to_string())
+}
+
 async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
-    // Detect language from --lang flag, ADI_LANG env var, or LANG env var
-    let user_lang = lang_override
-        .map(|s| s.to_string())
-        .or_else(|| std::env::var("ADI_LANG").ok())
-        .or_else(|| {
-            std::env::var("LANG")
-                .ok()
-                .and_then(|l| l.split('.').next().map(|s| s.replace('_', "-")))
-        })
-        .unwrap_or_else(|| "en-US".to_string());
+    // Load or create user config
+    let mut config = UserConfig::load()?;
+
+    // Detect language with priority:
+    // 1. CLI --lang flag (highest priority)
+    // 2. ADI_LANG environment variable
+    // 3. Saved user preference
+    // 4. System LANG environment variable
+    // 5. Interactive prompt on first run (if TTY)
+    // 6. Default to en-US
+    let user_lang = if let Some(lang) = lang_override {
+        lang.to_string()
+    } else if let Ok(env_lang) = std::env::var("ADI_LANG") {
+        env_lang
+    } else if let Some(saved_lang) = &config.language {
+        saved_lang.clone()
+    } else if let Ok(system_lang) = std::env::var("LANG") {
+        system_lang.split('.').next()
+            .map(|s| s.replace('_', "-"))
+            .unwrap_or_else(|| "en-US".to_string())
+    } else if UserConfig::is_first_run()? && UserConfig::is_interactive() {
+        // First run in interactive session - prompt user
+        let selected_lang = prompt_language_selection()?;
+
+        // Save the preference
+        config.language = Some(selected_lang.clone());
+        config.save()?;
+
+        println!();
+        println!("{}", style(format!("Language set to: {}", selected_lang)).green());
+        println!("{}", style("You can change this later by setting ADI_LANG environment variable or using --lang flag").dim());
+        println!();
+
+        selected_lang
+    } else {
+        // Non-interactive or not first run - use default
+        "en-US".to_string()
+    };
 
     // Create plugin runtime and load translation plugin
     let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
     let translation_id = format!("adi.cli.{}", user_lang);
 
-    // Try user's language, fallback to English
+    // Try to load user's language plugin
     if runtime.scan_and_load_plugin(&translation_id).await.is_err() {
-        let _ = runtime.scan_and_load_plugin("adi.cli.en-US").await;
+        // Plugin not installed - try to install it automatically
+        if user_lang != "en-US" {
+            println!("{}", style(format!("Installing {} translation plugin...", user_lang)).dim());
+
+            let manager = PluginManager::new();
+            if let Ok(()) = manager.install_plugin(&translation_id, None).await {
+                // Successfully installed, try loading again
+                if runtime.scan_and_load_plugin(&translation_id).await.is_err() {
+                    eprintln!("{}", style(format!("Warning: Failed to load {} after installation, falling back to English", translation_id)).yellow());
+                    let _ = runtime.scan_and_load_plugin("adi.cli.en-US").await;
+                }
+            } else {
+                // Installation failed, fallback to English
+                eprintln!("{}", style(format!("Warning: Translation plugin {} not available, using English", translation_id)).yellow());
+                let _ = runtime.scan_and_load_plugin("adi.cli.en-US").await;
+            }
+        } else {
+            // English not found, try loading it anyway (shouldn't happen)
+            let _ = runtime.scan_and_load_plugin("adi.cli.en-US").await;
+        }
     }
 
     // Initialize i18n with service registry (via adapter)

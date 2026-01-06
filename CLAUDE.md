@@ -29,8 +29,29 @@ adi-cli, rust, plugin-manager, plugin-registry, cross-platform
 - `src/plugin_runtime.rs` - PluginRuntime wrapping PluginHost
 - `src/plugin_registry.rs` - Plugin download/management
 
+## Internationalization (i18n)
+- First launch in interactive session prompts for preferred language
+- Non-interactive sessions use defaults until preference set
+- Language preference stored in `~/.config/adi/config.toml`
+- Available languages: English, 中文, Українська, Español, Français, Deutsch, 日本語, 한국語
+- **Auto-install**: Missing language plugins are automatically installed from registry
+
+### Language Selection Priority
+1. `--lang` CLI flag (highest priority)
+2. `ADI_LANG` environment variable
+3. Saved user preference in config file
+4. System `LANG` environment variable
+5. Interactive prompt on first run (if TTY)
+6. Default to `en-US`
+
+### User Config
+- Location: `~/.config/adi/config.toml`
+- Format: TOML with user preferences (language, etc.)
+- Auto-created on first interactive run when language is selected
+
 ## Environment Variables
 - `ADI_REGISTRY_URL` - Override default plugin registry URL
+- `ADI_LANG` - Set language (e.g., `en-US`, `zh-CN`, `uk-UA`)
 
 ## Deployment
 - Cross-platform: macOS (Intel/ARM), Linux (x86_64), Windows (x86_64)
