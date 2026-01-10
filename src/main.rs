@@ -5,9 +5,15 @@ use adi_cli::user_config::UserConfig;
 use clap::{Parser, Subcommand};
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
-use lib_i18n_core::{init_global, t, I18n, ServiceRegistry as I18nServiceRegistry, ServiceDescriptor as I18nServiceDescriptor, ServiceHandle as I18nServiceHandle};
+use lib_i18n_core::{
+    init_global, t, I18n, ServiceDescriptor as I18nServiceDescriptor,
+    ServiceHandle as I18nServiceHandle, ServiceRegistry as I18nServiceRegistry,
+};
+use lib_plugin_abi::{
+    ServiceDescriptor as PluginServiceDescriptor, ServiceError,
+    ServiceHandle as PluginServiceHandle,
+};
 use lib_plugin_host::ServiceRegistry as PluginServiceRegistry;
-use lib_plugin_abi::{ServiceError, ServiceHandle as PluginServiceHandle, ServiceDescriptor as PluginServiceDescriptor};
 use std::sync::Arc;
 
 #[derive(Parser)]
@@ -197,17 +203,29 @@ struct ServiceRegistryAdapter {
 
 impl I18nServiceRegistry for ServiceRegistryAdapter {
     fn list_services(&self) -> lib_i18n_core::Result<Vec<I18nServiceDescriptor>> {
-        Ok(self.inner.list()
+        Ok(self
+            .inner
+            .list()
             .into_iter()
             .map(|s: PluginServiceDescriptor| I18nServiceDescriptor::new(s.id.as_str().to_string()))
             .collect())
     }
 
-    fn lookup_service(&self, service_id: &str) -> lib_i18n_core::Result<Box<dyn I18nServiceHandle>> {
+    fn lookup_service(
+        &self,
+        service_id: &str,
+    ) -> lib_i18n_core::Result<Box<dyn I18nServiceHandle>> {
         self.inner
             .lookup(service_id)
-            .map(|handle| Box::new(ServiceHandleAdapter { inner: handle }) as Box<dyn I18nServiceHandle>)
-            .ok_or_else(|| lib_i18n_core::I18nError::ServiceRegistryError(format!("Service not found: {}", service_id)))
+            .map(|handle| {
+                Box::new(ServiceHandleAdapter { inner: handle }) as Box<dyn I18nServiceHandle>
+            })
+            .ok_or_else(|| {
+                lib_i18n_core::I18nError::ServiceRegistryError(format!(
+                    "Service not found: {}",
+                    service_id
+                ))
+            })
     }
 }
 
@@ -218,9 +236,9 @@ struct ServiceHandleAdapter {
 impl I18nServiceHandle for ServiceHandleAdapter {
     fn invoke(&self, method: &str, args: &str) -> lib_i18n_core::Result<String> {
         unsafe {
-            self.inner
-                .invoke(method, args)
-                .map_err(|e: ServiceError| lib_i18n_core::I18nError::ServiceInvokeError(e.to_string()))
+            self.inner.invoke(method, args).map_err(|e: ServiceError| {
+                lib_i18n_core::I18nError::ServiceInvokeError(e.to_string())
+            })
         }
     }
 }
@@ -276,7 +294,9 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
     } else if let Some(saved_lang) = &config.language {
         saved_lang.clone()
     } else if let Ok(system_lang) = std::env::var("LANG") {
-        system_lang.split('.').next()
+        system_lang
+            .split('.')
+            .next()
             .map(|s| s.replace('_', "-"))
             .unwrap_or_else(|| "en-US".to_string())
     } else if UserConfig::is_first_run()? && UserConfig::is_interactive() {
@@ -288,7 +308,10 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
         config.save()?;
 
         println!();
-        println!("{}", style(format!("Language set to: {}", selected_lang)).green());
+        println!(
+            "{}",
+            style(format!("Language set to: {}", selected_lang)).green()
+        );
         println!("{}", style("You can change this later by setting ADI_LANG environment variable or using --lang flag").dim());
         println!();
 
@@ -298,15 +321,34 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
         "en-US".to_string()
     };
 
+    // Supported languages (must have translation plugins in registry)
+    const SUPPORTED_LANGUAGES: &[&str] = &[
+        "en-US", "de-DE", "es-ES", "fr-FR", "ja-JP", "ko-KR", "ru-RU", "uk-UA", "zh-CN",
+    ];
+
+    // Check if requested language is supported, fallback to en-US if not
+    let effective_lang = if SUPPORTED_LANGUAGES.contains(&user_lang.as_str()) {
+        user_lang.clone()
+    } else {
+        "en-US".to_string()
+    };
+
     // Create plugin runtime and load translation plugin
     let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
-    let translation_id = format!("adi.cli.{}", user_lang);
+    let translation_id = format!("adi.cli.{}", effective_lang);
 
     // Try to load user's language plugin
     if runtime.scan_and_load_plugin(&translation_id).await.is_err() {
         // Plugin not installed - try to install it automatically
-        if user_lang != "en-US" {
-            println!("{}", style(format!("Installing {} translation plugin...", user_lang)).dim());
+        if effective_lang != "en-US" {
+            println!(
+                "{}",
+                style(format!(
+                    "Installing {} translation plugin...",
+                    effective_lang
+                ))
+                .dim()
+            );
 
             let manager = PluginManager::new();
             if let Ok(()) = manager.install_plugin(&translation_id, None).await {
@@ -317,7 +359,14 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
                 }
             } else {
                 // Installation failed, fallback to English
-                eprintln!("{}", style(format!("Warning: Translation plugin {} not available, using English", translation_id)).yellow());
+                eprintln!(
+                    "{}",
+                    style(format!(
+                        "Warning: Translation plugin {} not available, using English",
+                        translation_id
+                    ))
+                    .yellow()
+                );
                 let _ = runtime.scan_and_load_plugin("adi.cli.en-US").await;
             }
         } else {
@@ -331,8 +380,17 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
         inner: runtime.service_registry(),
     });
     let mut i18n = I18n::new(adapter).with_namespace("cli");
+
+    // Load embedded English translations as fallback (always available)
+    let _ = i18n.load_embedded("en-US", include_str!("../plugins/en-US/messages.ftl"));
+
+    // Discover additional translations from plugins
     i18n.discover_translations()?;
-    i18n.set_language(&user_lang)?;
+
+    // Try to set requested language, fallback to en-US if not available
+    if i18n.set_language(&effective_lang).is_err() {
+        let _ = i18n.set_language("en-US");
+    }
     init_global(i18n);
 
     Ok(())
@@ -415,11 +473,10 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
 
             for (id, _) in installed {
                 if let Err(e) = manager.update_plugin(&id).await {
-                    eprintln!(
-                        "{} {}",
-                        style(t!("common-warning-prefix")).yellow(),
-                        t!("plugin-update-all-warning", "id" => &id, "error" => &e.to_string())
-                    );
+                    let prefix = t!("common-warning-prefix");
+                    let msg =
+                        t!("plugin-update-all-warning", "id" => &id, "error" => &e.to_string());
+                    eprintln!("{} {}", style(prefix).yellow(), msg);
                 }
             }
 
@@ -592,11 +649,11 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
 
     // Check if plugin has CLI service
     if !runnable.iter().any(|(id, _)| id == &plugin_id) {
-        eprintln!(
-            "{} {}",
-            style(t!("common-error-prefix")).red().bold(),
-            t!("run-error-not-found", "id" => &plugin_id)
-        );
+        {
+            let prefix = t!("common-error-prefix");
+            let msg = t!("run-error-not-found", "id" => &plugin_id);
+            eprintln!("{} {}", style(prefix).red().bold(), msg);
+        }
         eprintln!();
         if runnable.is_empty() {
             eprintln!("{}", t!("run-error-no-plugins"));
@@ -622,11 +679,11 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
             Ok(())
         }
         Err(e) => {
-            eprintln!(
-                "{} {}",
-                style(t!("common-error-prefix")).red().bold(),
-                t!("run-error-failed", "error" => &e.to_string())
-            );
+            {
+                let prefix = t!("common-error-prefix");
+                let msg = t!("run-error-failed", "error" => &e.to_string());
+                eprintln!("{} {}", style(prefix).red().bold(), msg);
+            }
             std::process::exit(1);
         }
     }
@@ -638,7 +695,11 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
 /// finds the matching plugin, loads it, and executes the command.
 async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
     if args.is_empty() {
-        eprintln!("{} {}", style(t!("common-error-prefix")).red().bold(), t!("external-error-no-command"));
+        {
+            let prefix = t!("common-error-prefix");
+            let msg = t!("external-error-no-command");
+            eprintln!("{} {}", style(prefix).red().bold(), msg);
+        }
         std::process::exit(1);
     }
 
@@ -658,11 +719,11 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
 
     let Some(plugin_cmd) = matching_plugin else {
         // Command not found - show available commands
-        eprintln!(
-            "{} {}",
-            style(t!("common-error-prefix")).red().bold(),
-            t!("external-error-unknown", "command" => &command)
-        );
+        {
+            let prefix = t!("common-error-prefix");
+            let msg = t!("external-error-unknown", "command" => &command);
+            eprintln!("{} {}", style(prefix).red().bold(), msg);
+        }
         eprintln!();
 
         if cli_commands.is_empty() {
@@ -692,11 +753,12 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
 
     // Now scan and load only the needed plugin
     if let Err(e) = runtime.scan_and_load_plugin(plugin_id).await {
-        eprintln!(
-            "{} {}",
-            style(t!("common-error-prefix")).red().bold(),
-            t!("external-error-load-failed", "id" => plugin_id, "error" => &e.to_string())
-        );
+        {
+            let prefix = t!("common-error-prefix");
+            let msg =
+                t!("external-error-load-failed", "id" => plugin_id, "error" => &e.to_string());
+            eprintln!("{} {}", style(prefix).red().bold(), msg);
+        }
         eprintln!();
         eprintln!("{}", t!("external-hint-reinstall", "id" => plugin_id));
         std::process::exit(1);
@@ -715,13 +777,12 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
             Ok(())
         }
         Err(e) => {
-            eprintln!(
-                "{} {}",
-                style(t!("common-error-prefix")).red().bold(),
-                t!("external-error-run-failed", "command" => &command, "error" => &e.to_string())
-            );
+            {
+                let prefix = t!("common-error-prefix");
+                let msg = t!("external-error-run-failed", "command" => &command, "error" => &e.to_string());
+                eprintln!("{} {}", style(prefix).red().bold(), msg);
+            }
             std::process::exit(1);
         }
     }
 }
-

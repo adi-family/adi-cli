@@ -1,6 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use console::style;
-use lib_client_github::{no_auth, Client, Release, ReleaseAsset};
+use lib_client_github::{Client, Release, ReleaseAsset, no_auth};
 use lib_i18n_core::t;
 use std::env;
 use std::fs;
@@ -26,24 +26,28 @@ pub async fn self_update(force: bool) -> Result<()> {
     let latest_version = fetch_latest_version().await?;
 
     if !force && !version_is_newer(&latest_version, CURRENT_VERSION) {
-        println!(
-            "{} {}",
-            style(t!("common-checkmark")).green(),
-            t!("self-update-already-latest", "version" => CURRENT_VERSION)
-        );
+        {
+            let prefix = t!("common-checkmark");
+            let msg = t!("self-update-already-latest", "version" => CURRENT_VERSION);
+            println!("{} {}", style(prefix).green(), msg);
+        }
         return Ok(());
     }
 
-    println!(
-        "{} {}",
-        style(t!("common-arrow")).cyan(),
-        t!("self-update-new-version", "current" => CURRENT_VERSION, "latest" => &latest_version)
-    );
+    {
+        let prefix = t!("common-arrow");
+        let msg = t!("self-update-new-version", "current" => CURRENT_VERSION, "latest" => &latest_version);
+        println!("{} {}", style(prefix).cyan(), msg);
+    }
 
     let current_exe = env::current_exe()?;
     let platform = detect_platform()?;
 
-    println!("{} {}", style(t!("common-arrow")).cyan(), t!("self-update-downloading"));
+    {
+        let prefix = t!("common-arrow");
+        let msg = t!("self-update-downloading");
+        println!("{} {}", style(prefix).cyan(), msg);
+    }
     let release = fetch_latest_release().await?;
     let asset = select_asset(&release, &platform)?;
 
@@ -53,20 +57,28 @@ pub async fn self_update(force: bool) -> Result<()> {
     let archive_path = temp_dir.join(&asset.name);
     download_file(&asset.browser_download_url, &archive_path).await?;
 
-    println!("{} {}", style(t!("common-arrow")).cyan(), t!("self-update-extracting"));
+    {
+        let prefix = t!("common-arrow");
+        let msg = t!("self-update-extracting");
+        println!("{} {}", style(prefix).cyan(), msg);
+    }
     let binary_path = extract_binary(&archive_path, &temp_dir)?;
 
-    println!("{} {}", style(t!("common-arrow")).cyan(), t!("self-update-installing"));
+    {
+        let prefix = t!("common-arrow");
+        let msg = t!("self-update-installing");
+        println!("{} {}", style(prefix).cyan(), msg);
+    }
     replace_binary(&binary_path, &current_exe)?;
 
     // Cleanup
     let _ = fs::remove_dir_all(&temp_dir);
 
-    println!(
-        "{} {}",
-        style(t!("common-checkmark")).green(),
-        t!("self-update-success", "version" => &latest_version)
-    );
+    {
+        let prefix = t!("common-checkmark");
+        let msg = t!("self-update-success", "version" => &latest_version);
+        println!("{} {}", style(prefix).green(), msg);
+    }
 
     Ok(())
 }

@@ -165,11 +165,11 @@ impl PluginManager {
             }
         }
 
-        println!(
-            "{} {}",
-            style(t!("common-success-prefix")).green().bold(),
-            t!("plugin-install-success", "id" => id, "version" => &info.version)
-        );
+        {
+            let prefix = t!("common-success-prefix");
+            let msg = t!("plugin-install-success", "id" => id, "version" => &info.version);
+            println!("{} {}", style(prefix).green().bold(), msg);
+        }
 
         Ok(())
     }
@@ -183,14 +183,14 @@ impl PluginManager {
         let version_file = self.install_dir.join(id).join(".version");
         if version_file.exists() {
             let current_version = tokio::fs::read_to_string(&version_file).await?;
-            println!(
-                "{} {}",
-                style(t!("common-info-prefix")).cyan(),
-                t!("plugin-install-already-installed",
+            {
+                let prefix = t!("common-info-prefix");
+                let msg = t!("plugin-install-already-installed",
                     "id" => id,
                     "version" => current_version.trim()
-                )
-            );
+                );
+                println!("{} {}", style(prefix).cyan(), msg);
+            }
             return Ok(());
         }
 
@@ -225,10 +225,7 @@ impl PluginManager {
 
         for dep in deps {
             if !installing.contains(&dep) {
-                println!(
-                    "{}",
-                    t!("plugin-install-dependency", "id" => &dep)
-                );
+                println!("{}", t!("plugin-install-dependency", "id" => &dep));
                 // Recursively install dependency
                 Box::pin(self.install_recursive(&dep, None, installing)).await?;
             }
@@ -287,11 +284,11 @@ impl PluginManager {
 
         tokio::fs::remove_dir_all(&plugin_dir).await?;
 
-        println!(
-            "{} {}",
-            style(t!("common-success-prefix")).green().bold(),
-            t!("plugin-uninstall-success", "id" => id)
-        );
+        {
+            let prefix = t!("common-success-prefix");
+            let msg = t!("plugin-uninstall-success", "id" => id);
+            println!("{} {}", style(prefix).green().bold(), msg);
+        }
 
         Ok(())
     }
@@ -310,11 +307,12 @@ impl PluginManager {
         let latest = self.client.get_plugin_latest(id).await?;
 
         if current_version.trim() == latest.version {
-            println!(
-                "{} {}",
-                style(t!("common-info-prefix")).cyan(),
-                t!("plugin-update-already-latest", "id" => id, "version" => &latest.version)
-            );
+            {
+                let prefix = t!("common-info-prefix");
+                let msg =
+                    t!("plugin-update-already-latest", "id" => id, "version" => &latest.version);
+                println!("{} {}", style(prefix).cyan(), msg);
+            }
             return Ok(());
         }
 
@@ -390,11 +388,11 @@ impl PluginManager {
             .collect();
 
         if matching.is_empty() {
-            println!(
-                "{} {}",
-                style(t!("common-warning-prefix")).yellow(),
-                t!("plugin-install-pattern-none", "pattern" => pattern)
-            );
+            {
+                let prefix = t!("common-warning-prefix");
+                let msg = t!("plugin-install-pattern-none", "pattern" => pattern);
+                println!("{} {}", style(prefix).yellow(), msg);
+            }
             return Ok(());
         }
 
@@ -441,15 +439,19 @@ impl PluginManager {
             println!(); // Blank line between installs
         }
 
-        println!(
-            "{} {}",
-            style(t!("common-success-prefix")).green().bold(),
-            t!("plugin-install-pattern-success", "count" => &installed.to_string())
-        );
+        {
+            let prefix = t!("common-success-prefix");
+            let msg = t!("plugin-install-pattern-success", "count" => &installed.to_string());
+            println!("{} {}", style(prefix).green().bold(), msg);
+        }
 
         if !failed.is_empty() {
             println!();
-            println!("{} {}", style(t!("common-warning-prefix")).yellow(), t!("plugin-install-pattern-failed"));
+            {
+                let prefix = t!("common-warning-prefix");
+                let msg = t!("plugin-install-pattern-failed");
+                println!("{} {}", style(prefix).yellow(), msg);
+            }
             for id in failed {
                 println!("  - {}", id);
             }
