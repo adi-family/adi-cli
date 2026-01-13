@@ -18,10 +18,15 @@ const METADATA_JSON: &str = r#"{
 const SERVICE_ID: &str = "adi.i18n.cli.fr-FR";
 
 extern "C" fn plugin_info() -> PluginInfo {
-    PluginInfo::new("adi.cli.fr-FR", "ADI CLI - Français", "1.0.0", "translation")
-        .with_author("ADI Team")
-        .with_description("French translations for ADI CLI")
-        .with_min_host_version("0.8.0")
+    PluginInfo::new(
+        "adi.cli.fr-FR",
+        "ADI CLI - Français",
+        "1.0.0",
+        "translation",
+    )
+    .with_author("ADI Team")
+    .with_description("French translations for ADI CLI")
+    .with_min_host_version("0.8.0")
 }
 
 extern "C" fn plugin_init(ctx: *mut PluginContext) -> i32 {
@@ -54,7 +59,9 @@ extern "C" fn service_invoke(
     match method.as_str() {
         "get_messages" => RResult::ROk(RString::from(MESSAGES_FTL)),
         "get_metadata" => RResult::ROk(RString::from(METADATA_JSON)),
-        _ => RResult::RErr(lib_plugin_abi::ServiceError::method_not_found(method.as_str())),
+        _ => RResult::RErr(lib_plugin_abi::ServiceError::method_not_found(
+            method.as_str(),
+        )),
     }
 }
 

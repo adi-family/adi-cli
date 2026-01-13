@@ -21,15 +21,10 @@ const SERVICE_ID: &str = "adi.i18n.cli.en-US";
 // === Plugin VTable Implementation ===
 
 extern "C" fn plugin_info() -> PluginInfo {
-    PluginInfo::new(
-        "adi.cli.en-US",
-        "ADI CLI - English",
-        "1.0.0",
-        "translation",
-    )
-    .with_author("ADI Team")
-    .with_description("English translations for ADI CLI")
-    .with_min_host_version("0.8.0")
+    PluginInfo::new("adi.cli.en-US", "ADI CLI - English", "1.0.0", "translation")
+        .with_author("ADI Team")
+        .with_description("English translations for ADI CLI")
+        .with_min_host_version("0.8.0")
 }
 
 extern "C" fn plugin_init(ctx: *mut PluginContext) -> i32 {
@@ -48,10 +43,7 @@ extern "C" fn plugin_init(ctx: *mut PluginContext) -> i32 {
         );
 
         if let Err(code) = host.register_svc(descriptor, handle) {
-            host.error(&format!(
-                "Failed to register translation service: {}",
-                code
-            ));
+            host.error(&format!("Failed to register translation service: {}", code));
             return code;
         }
 

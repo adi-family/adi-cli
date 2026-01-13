@@ -1,6 +1,6 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use console::style;
-use lib_client_github::{Client, Release, ReleaseAsset, no_auth};
+use lib_client_github::{no_auth, Client, Release, ReleaseAsset};
 use lib_i18n_core::t;
 use std::env;
 use std::fs;

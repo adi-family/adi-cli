@@ -54,7 +54,9 @@ extern "C" fn service_invoke(
     match method.as_str() {
         "get_messages" => RResult::ROk(RString::from(MESSAGES_FTL)),
         "get_metadata" => RResult::ROk(RString::from(METADATA_JSON)),
-        _ => RResult::RErr(lib_plugin_abi::ServiceError::method_not_found(method.as_str())),
+        _ => RResult::RErr(lib_plugin_abi::ServiceError::method_not_found(
+            method.as_str(),
+        )),
     }
 }
 

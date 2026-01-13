@@ -73,14 +73,16 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
                     if let Some(cli) = &manifest.cli {
                         // Leak strings to get 'static lifetime required by clap
                         let name: &'static str = Box::leak(cli.command.clone().into_boxed_str());
-                        let desc: &'static str = Box::leak(cli.description.clone().into_boxed_str());
+                        let desc: &'static str =
+                            Box::leak(cli.description.clone().into_boxed_str());
 
                         let mut subcmd = Command::new(name)
                             .about(desc)
                             .allow_external_subcommands(true);
 
                         for alias in &cli.aliases {
-                            let alias_static: &'static str = Box::leak(alias.clone().into_boxed_str());
+                            let alias_static: &'static str =
+                                Box::leak(alias.clone().into_boxed_str());
                             subcmd = subcmd.visible_alias(alias_static);
                         }
 
@@ -129,7 +131,6 @@ fn find_plugin_manifest(plugin_dir: &std::path::Path) -> Option<std::path::PathB
 
     None
 }
-
 
 /// Get the shell configuration file path for the current shell.
 pub fn get_shell_config_path(shell: CompletionShell) -> Option<PathBuf> {
@@ -194,7 +195,10 @@ pub fn get_completion_filename(shell: CompletionShell, bin_name: &str) -> String
 
 /// Initialize shell completions by writing to the appropriate location
 /// and updating shell configuration if needed.
-pub fn init_completions<C: CommandFactory>(shell: CompletionShell, bin_name: &str) -> anyhow::Result<PathBuf> {
+pub fn init_completions<C: CommandFactory>(
+    shell: CompletionShell,
+    bin_name: &str,
+) -> anyhow::Result<PathBuf> {
     let completions_dir = get_completions_dir(shell)
         .ok_or_else(|| anyhow::anyhow!("Could not determine completions directory"))?;
 
@@ -216,23 +220,29 @@ pub fn init_completions<C: CommandFactory>(shell: CompletionShell, bin_name: &st
     // For some shells, we need to update the rc file
     match shell {
         CompletionShell::Zsh => {
-            add_to_shell_config(shell, &format!(
-                r#"
+            add_to_shell_config(
+                shell,
+                &format!(
+                    r#"
 # ADI CLI completions
 fpath=(~/.zfunc $fpath)
 autoload -Uz compinit && compinit
 "#
-            ))?;
+                ),
+            )?;
         }
         CompletionShell::Bash => {
             let source_line = format!("source \"{}\"", completion_file.display());
-            add_to_shell_config(shell, &format!(
-                r#"
+            add_to_shell_config(
+                shell,
+                &format!(
+                    r#"
 # ADI CLI completions
 {}
 "#,
-                source_line
-            ))?;
+                    source_line
+                ),
+            )?;
         }
         CompletionShell::Fish => {
             // Fish auto-loads from ~/.config/fish/completions
@@ -296,23 +306,21 @@ pub fn regenerate_completions<C: CommandFactory>(bin_name: &str) -> anyhow::Resu
 
 /// Detect the current shell from environment.
 pub fn detect_shell() -> Option<CompletionShell> {
-    std::env::var("SHELL")
-        .ok()
-        .and_then(|s| {
-            if s.contains("zsh") {
-                Some(CompletionShell::Zsh)
-            } else if s.contains("bash") {
-                Some(CompletionShell::Bash)
-            } else if s.contains("fish") {
-                Some(CompletionShell::Fish)
-            } else if s.contains("pwsh") || s.contains("powershell") {
-                Some(CompletionShell::PowerShell)
-            } else if s.contains("elvish") {
-                Some(CompletionShell::Elvish)
-            } else {
-                None
-            }
-        })
+    std::env::var("SHELL").ok().and_then(|s| {
+        if s.contains("zsh") {
+            Some(CompletionShell::Zsh)
+        } else if s.contains("bash") {
+            Some(CompletionShell::Bash)
+        } else if s.contains("fish") {
+            Some(CompletionShell::Fish)
+        } else if s.contains("pwsh") || s.contains("powershell") {
+            Some(CompletionShell::PowerShell)
+        } else if s.contains("elvish") {
+            Some(CompletionShell::Elvish)
+        } else {
+            None
+        }
+    })
 }
 
 /// Ensure shell completions are installed (called automatically on every run).
@@ -398,21 +406,33 @@ fn completions_outdated(completion_file: &std::path::Path) -> bool {
 }
 
 /// Set up shell configuration to source completions.
-fn setup_shell_config(shell: CompletionShell, completion_file: &std::path::Path) -> anyhow::Result<()> {
+fn setup_shell_config(
+    shell: CompletionShell,
+    completion_file: &std::path::Path,
+) -> anyhow::Result<()> {
     match shell {
         CompletionShell::Zsh => {
-            add_to_shell_config(shell, r#"
+            add_to_shell_config(
+                shell,
+                r#"
 # ADI CLI completions
 fpath=(~/.zfunc $fpath)
 autoload -Uz compinit && compinit
-"#)?;
+"#,
+            )?;
         }
         CompletionShell::Bash => {
             let source_line = format!("source \"{}\"", completion_file.display());
-            add_to_shell_config(shell, &format!(r#"
+            add_to_shell_config(
+                shell,
+                &format!(
+                    r#"
 # ADI CLI completions
 {}
-"#, source_line))?;
+"#,
+                    source_line
+                ),
+            )?;
         }
         CompletionShell::Fish => {
             // Fish auto-loads from ~/.config/fish/completions
@@ -436,8 +456,14 @@ mod tests {
 
     #[test]
     fn test_completion_filename() {
-        assert_eq!(get_completion_filename(CompletionShell::Bash, "adi"), "adi.bash");
+        assert_eq!(
+            get_completion_filename(CompletionShell::Bash, "adi"),
+            "adi.bash"
+        );
         assert_eq!(get_completion_filename(CompletionShell::Zsh, "adi"), "_adi");
-        assert_eq!(get_completion_filename(CompletionShell::Fish, "adi"), "adi.fish");
+        assert_eq!(
+            get_completion_filename(CompletionShell::Fish, "adi"),
+            "adi.fish"
+        );
     }
 }
