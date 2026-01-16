@@ -19,4 +19,4 @@ version = "1.0.0"
 description = "Chinese translations for CLI"
 
 [binary]
-name = "adi_cli_lang_zh_cn"
+name = "plugin"

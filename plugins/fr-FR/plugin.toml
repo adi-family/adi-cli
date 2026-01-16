@@ -19,4 +19,4 @@ version = "1.0.0"
 description = "French translations for CLI"
 
 [binary]
-name = "adi_cli_lang_fr_fr"
+name = "plugin"

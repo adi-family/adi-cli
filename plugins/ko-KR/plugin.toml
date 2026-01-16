@@ -19,4 +19,4 @@ version = "1.0.0"
 description = "Korean translations for CLI"
 
 [binary]
-name = "adi_cli_lang_ko_kr"
+name = "plugin"

@@ -19,4 +19,4 @@ version = "1.0.0"
 description = "Ukrainian translations for CLI"
 
 [binary]
-name = "adi_cli_lang_uk_ua"
+name = "plugin"

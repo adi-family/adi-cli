@@ -19,4 +19,4 @@ version = "1.0.0"
 description = "Spanish translations for CLI"
 
 [binary]
-name = "adi_cli_lang_es_es"
+name = "plugin"

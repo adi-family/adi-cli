@@ -19,4 +19,4 @@ version = "1.0.0"
 description = "Japanese translations for CLI"
 
 [binary]
-name = "adi_cli_lang_ja_jp"
+name = "plugin"

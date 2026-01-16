@@ -19,4 +19,4 @@ version = "1.0.0"
 description = "Russian translations for CLI"
 
 [binary]
-name = "adi_cli_lang_ru_ru"
+name = "plugin"
