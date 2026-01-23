@@ -1,6 +1,6 @@
 [package]
 name = "adi-cli"
-version = "0.8.9"
+version = "0.9.0"
 edition = "2021"
 license = "BSL-1.0"
 description = "CLI for ADI family components - component installer and manager"
@@ -40,3 +40,8 @@ lib-plugin-manifest = { path = "../lib/lib-plugin-manifest" }
 
 # Internationalization
 lib-i18n-core = { path = "../lib/lib-i18n-core" }
+
+# HTTP server for `adi start`
+axum = { version = "0.8", features = ["macros"] }
+tower-http = { version = "0.6", features = ["cors"] }
+hostname = "0.4"

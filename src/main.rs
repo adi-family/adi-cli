@@ -38,6 +38,13 @@ enum Commands {
         force: bool,
     },
 
+    /// Start local ADI server for browser connection
+    Start {
+        /// Port to listen on (default: 14730)
+        #[arg(short, long, default_value = "14730")]
+        port: u16,
+    },
+
     /// Manage plugins from the registry
     Plugin {
         #[command(subcommand)]
@@ -143,6 +150,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::SelfUpdate { force } => adi_cli::self_update::self_update(force).await?,
+        Commands::Start { port } => cmd_start(port).await?,
         Commands::Plugin { command } => cmd_plugin(command).await?,
         Commands::Search { query } => cmd_search(&query).await?,
         Commands::Debug { command } => cmd_debug(command).await?,
@@ -785,4 +793,201 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
             std::process::exit(1);
         }
     }
+}
+
+/// Start local ADI server for browser connection.
+///
+/// This command:
+/// 1. Ensures the cocoon plugin is installed
+/// 2. Starts a local HTTP server with health + connect endpoints
+/// 3. Waits for browser to send token via POST /connect
+/// 4. Connects to signaling server with the token
+async fn cmd_start(port: u16) -> anyhow::Result<()> {
+    use axum::{routing::{get, post}, Router};
+    use tower_http::cors::{Any, CorsLayer};
+    use tokio::sync::RwLock;
+
+    println!(
+        "{}",
+        style("Starting ADI local server...").cyan().bold()
+    );
+
+    // Ensure cocoon plugin is installed
+    let manager = PluginManager::new();
+    let installed = manager.list_installed().await?;
+    let cocoon_installed = installed.iter().any(|(id, _)| id == "adi.cocoon");
+
+    if !cocoon_installed {
+        println!(
+            "{}",
+            style("Installing cocoon plugin...").dim()
+        );
+        manager.install_plugin("adi.cocoon", None).await?;
+        println!(
+            "{}",
+            style("Cocoon plugin installed!").green()
+        );
+    }
+
+    // Get machine hostname for display
+    let hostname = hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "Local Machine".to_string());
+
+    // Create channel for connection requests
+    let (connect_tx, mut connect_rx) = tokio::sync::mpsc::channel::<ConnectRequest>(1);
+
+    // Shared state for connection status
+    let state = Arc::new(StartServerState {
+        connected: RwLock::new(false),
+        hostname: hostname.clone(),
+        connect_tx,
+    });
+
+    // Create HTTP server with health and connect endpoints
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    let app = Router::new()
+        .route("/health", get(health_handler))
+        .route("/connect", post(connect_handler))
+        .layer(cors)
+        .with_state(state);
+
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+
+    println!();
+    println!(
+        "  {} {}",
+        style("Name:").dim(),
+        style(&hostname).white().bold()
+    );
+    println!(
+        "  {} {}",
+        style("URL:").dim(),
+        style(format!("http://localhost:{}", port)).cyan()
+    );
+    println!();
+    println!(
+        "{}",
+        style("Waiting for browser connection... (Ctrl+C to stop)").dim()
+    );
+    println!();
+
+    // Start HTTP server in background
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await
+    });
+
+    // Wait for connection request from browser
+    if let Some(req) = connect_rx.recv().await {
+        println!(
+            "{}",
+            style("Browser connected! Starting cocoon...").green().bold()
+        );
+
+        // Set environment variables for the cocoon plugin
+        std::env::set_var("SIGNALING_SERVER_URL", &req.signaling_url);
+        std::env::set_var("COCOON_SETUP_TOKEN", &req.token);
+
+        // Load and run cocoon plugin
+        let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
+
+        runtime.scan_and_load_plugin("adi.cocoon").await?;
+
+        // Run the cocoon (this will block and run the cocoon)
+        let context = serde_json::json!({
+            "command": "adi.cocoon",
+            "args": ["run"],
+            "cwd": std::env::current_dir().unwrap_or_default().to_string_lossy()
+        });
+
+        println!(
+            "{}",
+            style("Cocoon connected to platform!").green()
+        );
+
+        runtime.run_cli_command("adi.cocoon", &context.to_string())?;
+    }
+
+    // Abort the server task (cocoon finished or error)
+    server.abort();
+
+    Ok(())
+}
+
+/// Shared state for the start server
+struct StartServerState {
+    connected: tokio::sync::RwLock<bool>,
+    hostname: String,
+    /// Channel to send connection request to main loop
+    connect_tx: tokio::sync::mpsc::Sender<ConnectRequest>,
+}
+
+/// Health endpoint handler for browser polling
+async fn health_handler(
+    axum::extract::State(state): axum::extract::State<Arc<StartServerState>>,
+) -> axum::Json<serde_json::Value> {
+    let connected = *state.connected.read().await;
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "name": state.hostname,
+        "version": env!("CARGO_PKG_VERSION"),
+        "connected": connected
+    }))
+}
+
+/// Request body for connect endpoint
+#[derive(serde::Deserialize)]
+struct ConnectRequest {
+    token: String,
+    #[serde(default = "default_signaling_url")]
+    signaling_url: String,
+}
+
+fn default_signaling_url() -> String {
+    "wss://adi.the-ihor.com/api/signaling/ws".to_string()
+}
+
+/// Connect endpoint - browser sends token to register with platform
+async fn connect_handler(
+    axum::extract::State(state): axum::extract::State<Arc<StartServerState>>,
+    axum::Json(req): axum::Json<ConnectRequest>,
+) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
+    // Check if already connected
+    if *state.connected.read().await {
+        return (
+            axum::http::StatusCode::OK,
+            axum::Json(serde_json::json!({
+                "status": "already_connected",
+                "name": state.hostname
+            })),
+        );
+    }
+
+    // Send connection request to main loop
+    if let Err(e) = state.connect_tx.send(req).await {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "message": format!("Failed to process request: {}", e)
+            })),
+        );
+    }
+
+    // Mark as connected (cocoon will be started by main loop)
+    *state.connected.write().await = true;
+
+    (
+        axum::http::StatusCode::OK,
+        axum::Json(serde_json::json!({
+            "status": "connecting",
+            "name": state.hostname
+        })),
+    )
 }
