@@ -225,6 +225,22 @@ fn replace_binary(new_binary: &PathBuf, current_exe: &PathBuf) -> Result<()> {
     {
         // On Unix, we can replace the running binary
         fs::copy(new_binary, current_exe)?;
+        
+        // On macOS, re-sign the binary with ad-hoc signature
+        // This is required because the binary loses its signature when extracted
+        #[cfg(target_os = "macos")]
+        {
+            use std::process::Command;
+            // Remove any existing signature first
+            let _ = Command::new("codesign")
+                .args(["--remove-signature", current_exe.to_str().unwrap_or("")])
+                .output();
+            // Sign with ad-hoc signature
+            let _ = Command::new("codesign")
+                .args(["-s", "-", current_exe.to_str().unwrap_or("")])
+                .output();
+        }
+        
         Ok(())
     }
 
