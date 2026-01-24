@@ -829,10 +829,8 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
         );
     }
 
-    // Get machine hostname for display
-    let hostname = hostname::get()
-        .map(|h| h.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "Local Machine".to_string());
+    // Get machine name for display
+    let hostname = get_machine_name();
 
     // Create channel for connection requests
     let (connect_tx, mut connect_rx) = tokio::sync::mpsc::channel::<ConnectRequest>(1);
@@ -858,6 +856,17 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
 
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
 
+    // Detect capabilities
+    let capabilities = detect_capabilities();
+    let ai_agents: Vec<_> = capabilities.iter()
+        .filter(|c| c.category == "ai-agent")
+        .map(|c| c.name)
+        .collect();
+    let runtimes: Vec<_> = capabilities.iter()
+        .filter(|c| c.category == "runtime")
+        .map(|c| c.name)
+        .collect();
+
     println!();
     println!(
         "  {} {}",
@@ -869,6 +878,20 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
         style("URL:").dim(),
         style(format!("http://localhost:{}", port)).cyan()
     );
+    if !ai_agents.is_empty() {
+        println!(
+            "  {} {}",
+            style("Agents:").dim(),
+            style(ai_agents.join(", ")).green()
+        );
+    }
+    if !runtimes.is_empty() {
+        println!(
+            "  {} {}",
+            style("Runtimes:").dim(),
+            style(runtimes.join(", ")).blue()
+        );
+    }
     println!();
     println!(
         "{}",
@@ -889,31 +912,46 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
             style("Browser connected! Starting cocoon...").green().bold()
         );
 
-        // Set environment variables for the cocoon plugin
+        // Set environment variables for the cocoon service installation
         std::env::set_var("SIGNALING_SERVER_URL", &req.signaling_url);
         std::env::set_var("COCOON_SETUP_TOKEN", &req.token);
+        std::env::set_var("COCOON_NAME", &hostname);
 
-        // Load and run cocoon plugin
+        // Load cocoon plugin to install and start as a service (daemon)
         let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
-
         runtime.scan_and_load_plugin("adi.cocoon").await?;
 
-        // Run the cocoon (this will block and run the cocoon)
-        let context = serde_json::json!({
+        // Install the cocoon service (creates launchd plist or systemd unit)
+        let install_context = serde_json::json!({
             "command": "adi.cocoon",
-            "args": ["run"],
+            "args": ["create", "--runtime", "machine", "--start"],
             "cwd": std::env::current_dir().unwrap_or_default().to_string_lossy()
         });
 
+        runtime.run_cli_command("adi.cocoon", &install_context.to_string())?;
+
         println!(
             "{}",
-            style("Cocoon connected to platform!").green()
+            style("Cocoon installed and running as a background service!").green()
         );
-
-        runtime.run_cli_command("adi.cocoon", &context.to_string())?;
+        println!(
+            "  {} {}",
+            style("Status:").dim(),
+            style("adi cocoon status").cyan()
+        );
+        println!(
+            "  {} {}",
+            style("Logs:").dim(),
+            style("adi cocoon logs").cyan()
+        );
+        println!(
+            "  {} {}",
+            style("Stop:").dim(),
+            style("adi cocoon stop").cyan()
+        );
     }
 
-    // Abort the server task (cocoon finished or error)
+    // Abort the HTTP server task
     server.abort();
 
     Ok(())
@@ -950,7 +988,93 @@ struct ConnectRequest {
 }
 
 fn default_signaling_url() -> String {
-    "wss://adi.the-ihor.com/api/signaling/ws".to_string()
+    std::env::var("SIGNALING_SERVER_URL")
+        .unwrap_or_else(|_| "wss://adi.the-ihor.com/api/signaling/ws".to_string())
+}
+
+/// Get a friendly machine name for display
+fn get_machine_name() -> String {
+    // On macOS, try to get the friendly "Computer Name" first
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        if let Ok(output) = Command::new("scutil").args(["--get", "ComputerName"]).output() {
+            if output.status.success() {
+                if let Ok(name) = String::from_utf8(output.stdout) {
+                    let name = name.trim();
+                    if !name.is_empty() {
+                        return name.to_string();
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback to hostname
+    hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "Local Machine".to_string())
+}
+
+/// Detected capability on the machine
+struct Capability {
+    name: &'static str,
+    category: &'static str,
+}
+
+/// Detect available tools/capabilities on the machine
+fn detect_capabilities() -> Vec<Capability> {
+    use std::process::Command;
+    
+    let tools: &[(&str, &str)] = &[
+        // AI Coding Agents
+        ("claude", "ai-agent"),
+        ("codex", "ai-agent"),
+        ("aider", "ai-agent"),
+        ("cursor", "ai-agent"),
+        ("copilot", "ai-agent"),
+        ("gemini", "ai-agent"),
+        // Languages & Runtimes
+        ("node", "runtime"),
+        ("bun", "runtime"),
+        ("deno", "runtime"),
+        ("python3", "runtime"),
+        ("python", "runtime"),
+        ("cargo", "runtime"),
+        ("go", "runtime"),
+        ("java", "runtime"),
+        ("ruby", "runtime"),
+        ("php", "runtime"),
+        ("dotnet", "runtime"),
+        ("swift", "runtime"),
+        // Dev Tools
+        ("git", "tool"),
+        ("gh", "tool"),
+        ("docker", "tool"),
+        ("kubectl", "tool"),
+        ("terraform", "tool"),
+        ("aws", "tool"),
+        ("gcloud", "tool"),
+        ("az", "tool"),
+    ];
+    
+    let mut capabilities = Vec::new();
+    
+    for (cmd, category) in tools {
+        let result = if cfg!(windows) {
+            Command::new("where").arg(cmd).output()
+        } else {
+            Command::new("which").arg(cmd).output()
+        };
+        
+        if let Ok(output) = result {
+            if output.status.success() {
+                capabilities.push(Capability { name: cmd, category });
+            }
+        }
+    }
+    
+    capabilities
 }
 
 /// Connect endpoint - browser sends token to register with platform
