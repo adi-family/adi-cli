@@ -112,6 +112,15 @@ external-error-load-failed = Не вдалося завантажити плаг
 external-hint-reinstall = Спробуйте перевстановити: adi plugin install { $id }
 external-error-run-failed = Не вдалося виконати { $command }: { $error }
 
+# Автовстановлення
+external-autoinstall-found = Плагін '{ $id }' надає команду '{ $command }'
+external-autoinstall-prompt = Встановити? [y/N]
+external-autoinstall-installing = Встановлення плагіна '{ $id }'...
+external-autoinstall-success = Плагін успішно встановлено!
+external-autoinstall-failed = Не вдалося встановити плагін: { $error }
+external-autoinstall-disabled = Автовстановлення вимкнено. Виконайте: adi plugin install { $id }
+external-autoinstall-not-found = Не знайдено плагін, що надає команду '{ $command }'
+
 # ============================================================================
 # ЗАГАЛЬНІ/СПІЛЬНІ ПОВІДОМЛЕННЯ
 # ============================================================================

@@ -112,6 +112,15 @@ external-error-load-failed = 加载插件 '{ $id }' 失败: { $error }
 external-hint-reinstall = 尝试重新安装: adi plugin install { $id }
 external-error-run-failed = 运行 { $command } 失败: { $error }
 
+# 自动安装
+external-autoinstall-found = 插件 '{ $id }' 提供命令 '{ $command }'
+external-autoinstall-prompt = 是否安装？[y/N]
+external-autoinstall-installing = 正在安装插件 '{ $id }'...
+external-autoinstall-success = 插件安装成功！
+external-autoinstall-failed = 插件安装失败: { $error }
+external-autoinstall-disabled = 自动安装已禁用。运行: adi plugin install { $id }
+external-autoinstall-not-found = 未找到提供命令 '{ $command }' 的插件
+
 # ============================================================================
 # 通用/共享消息
 # ============================================================================

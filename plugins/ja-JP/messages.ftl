@@ -112,6 +112,15 @@ external-error-load-failed = プラグイン '{ $id }' の読み込みに失敗�
 external-hint-reinstall = 再インストールを試してください: adi plugin install { $id }
 external-error-run-failed = { $command } の実行に失敗しました: { $error }
 
+# 自動インストール
+external-autoinstall-found = プラグイン '{ $id }' がコマンド '{ $command }' を提供しています
+external-autoinstall-prompt = インストールしますか？ [y/N]
+external-autoinstall-installing = プラグイン '{ $id }' をインストール中...
+external-autoinstall-success = プラグインのインストールに成功しました！
+external-autoinstall-failed = プラグインのインストールに失敗しました: { $error }
+external-autoinstall-disabled = 自動インストールが無効です。実行: adi plugin install { $id }
+external-autoinstall-not-found = コマンド '{ $command }' を提供するプラグインが見つかりません
+
 # ============================================================================
 # 共通メッセージ
 # ============================================================================

@@ -45,3 +45,6 @@ lib-i18n-core = { path = "../lib/lib-i18n-core" }
 axum = { version = "0.8", features = ["macros"] }
 tower-http = { version = "0.6", features = ["cors"] }
 hostname = "0.4"
+
+# TTY detection for auto-install prompts
+atty = "0.2"

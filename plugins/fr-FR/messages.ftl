@@ -112,6 +112,15 @@ external-error-load-failed = Échec du chargement du plugin '{ $id }' : { $error
 external-hint-reinstall = Essayez de réinstaller : adi plugin install { $id }
 external-error-run-failed = Échec de l'exécution de { $command } : { $error }
 
+# Installation automatique
+external-autoinstall-found = Le plugin '{ $id }' fournit la commande '{ $command }'
+external-autoinstall-prompt = Voulez-vous l'installer ? [y/N]
+external-autoinstall-installing = Installation du plugin '{ $id }'...
+external-autoinstall-success = Plugin installé avec succès !
+external-autoinstall-failed = Échec de l'installation du plugin : { $error }
+external-autoinstall-disabled = Installation automatique désactivée. Exécutez : adi plugin install { $id }
+external-autoinstall-not-found = Aucun plugin trouvé fournissant la commande '{ $command }'
+
 # ============================================================================
 # MESSAGES COMMUNS/PARTAGÉS
 # ============================================================================

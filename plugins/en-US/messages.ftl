@@ -112,6 +112,15 @@ external-error-load-failed = Failed to load plugin '{ $id }': { $error }
 external-hint-reinstall = Try reinstalling: adi plugin install { $id }
 external-error-run-failed = Failed to run { $command }: { $error }
 
+# Auto-install
+external-autoinstall-found = Plugin '{ $id }' provides command '{ $command }'
+external-autoinstall-prompt = Would you like to install it? [y/N]
+external-autoinstall-installing = Installing plugin '{ $id }'...
+external-autoinstall-success = Plugin installed successfully!
+external-autoinstall-failed = Failed to install plugin: { $error }
+external-autoinstall-disabled = Auto-install disabled. Run: adi plugin install { $id }
+external-autoinstall-not-found = No plugin found providing command '{ $command }'
+
 # ============================================================================
 # COMMON/SHARED MESSAGES
 # ============================================================================

@@ -112,6 +112,15 @@ external-error-load-failed = 플러그인 '{ $id }' 로드 실패: { $error }
 external-hint-reinstall = 재설치를 시도하세요: adi plugin install { $id }
 external-error-run-failed = { $command } 실행 실패: { $error }
 
+# 자동 설치
+external-autoinstall-found = 플러그인 '{ $id }'이(가) 명령 '{ $command }'을(를) 제공합니다
+external-autoinstall-prompt = 설치하시겠습니까? [y/N]
+external-autoinstall-installing = 플러그인 '{ $id }' 설치 중...
+external-autoinstall-success = 플러그인이 성공적으로 설치되었습니다!
+external-autoinstall-failed = 플러그인 설치 실패: { $error }
+external-autoinstall-disabled = 자동 설치가 비활성화되었습니다. 실행: adi plugin install { $id }
+external-autoinstall-not-found = 명령 '{ $command }'을(를) 제공하는 플러그인을 찾을 수 없습니다
+
 # ============================================================================
 # 공통 메시지
 # ============================================================================

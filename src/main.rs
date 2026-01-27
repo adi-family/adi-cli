@@ -130,6 +130,12 @@ enum PluginCommands {
         /// Plugin ID
         plugin_id: String,
     },
+
+    /// Show installation path for a plugin
+    Path {
+        /// Plugin ID
+        plugin_id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -506,6 +512,26 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             manager.uninstall_plugin(&plugin_id).await?;
             regenerate_completions_quiet();
         }
+        PluginCommands::Path { plugin_id } => {
+            let plugin_dir = manager.plugin_path(&plugin_id);
+            let version_file = plugin_dir.join(".version");
+
+            if !version_file.exists() {
+                eprintln!(
+                    "{} Plugin {} is not installed",
+                    style("Error:").red().bold(),
+                    style(&plugin_id).cyan()
+                );
+                std::process::exit(1);
+            }
+
+            let version = tokio::fs::read_to_string(&version_file).await?;
+            let version = version.trim();
+            let versioned_path = plugin_dir.join(version);
+
+            // Print just the path (useful for scripting)
+            println!("{}", versioned_path.display());
+        }
     }
 
     Ok(())
@@ -701,6 +727,9 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
 ///
 /// This function discovers CLI commands from installed plugin manifests,
 /// finds the matching plugin, loads it, and executes the command.
+///
+/// If the command is not found in installed plugins, it will attempt to
+/// auto-install the plugin from the registry (following the `adi.{command}` pattern).
 async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
     if args.is_empty() {
         {
@@ -715,7 +744,7 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
     let cmd_args: Vec<String> = args.into_iter().skip(1).collect();
 
     // Create runtime to discover CLI commands from manifests
-    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
+    let mut runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
 
     // Discover CLI commands (fast - only reads manifests, no binary loading)
     let cli_commands = runtime.discover_cli_commands();
@@ -725,61 +754,49 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
         .iter()
         .find(|c| c.command == command || c.aliases.contains(&command));
 
-    let Some(plugin_cmd) = matching_plugin else {
-        // Command not found - show available commands
-        {
-            let prefix = t!("common-error-prefix");
-            let msg = t!("external-error-unknown", "command" => &command);
-            eprintln!("{} {}", style(prefix).red().bold(), msg);
-        }
-        eprintln!();
-
-        if cli_commands.is_empty() {
-            eprintln!("{}", t!("external-error-no-installed"));
-            eprintln!();
-            eprintln!("{}", t!("external-hint-install"));
-        } else {
-            eprintln!("{}", style(t!("external-available-title")).bold());
-            for cmd in &cli_commands {
-                let aliases = if cmd.aliases.is_empty() {
-                    String::new()
-                } else {
-                    format!(" (aliases: {})", cmd.aliases.join(", "))
-                };
-                eprintln!(
-                    "  {} - {}{}",
-                    style(&cmd.command).cyan().bold(),
-                    cmd.description,
-                    style(aliases).dim()
-                );
+    let plugin_id = if let Some(plugin_cmd) = matching_plugin {
+        plugin_cmd.plugin_id.clone()
+    } else {
+        // Command not found in installed plugins - try auto-install
+        match try_autoinstall_plugin(&command, &cli_commands).await {
+            AutoinstallResult::Installed(id) => {
+                // Refresh the runtime to pick up the newly installed plugin
+                runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
+                id
+            }
+            AutoinstallResult::NotFound => {
+                std::process::exit(1);
+            }
+            AutoinstallResult::Declined => {
+                std::process::exit(1);
+            }
+            AutoinstallResult::Failed => {
+                std::process::exit(1);
             }
         }
-        std::process::exit(1);
     };
 
-    let plugin_id = &plugin_cmd.plugin_id;
-
     // Now scan and load only the needed plugin
-    if let Err(e) = runtime.scan_and_load_plugin(plugin_id).await {
+    if let Err(e) = runtime.scan_and_load_plugin(&plugin_id).await {
         {
             let prefix = t!("common-error-prefix");
             let msg =
-                t!("external-error-load-failed", "id" => plugin_id, "error" => &e.to_string());
+                t!("external-error-load-failed", "id" => &plugin_id, "error" => &e.to_string());
             eprintln!("{} {}", style(prefix).red().bold(), msg);
         }
         eprintln!();
-        eprintln!("{}", t!("external-hint-reinstall", "id" => plugin_id));
+        eprintln!("{}", t!("external-hint-reinstall", "id" => &plugin_id));
         std::process::exit(1);
     }
 
     // Build CLI context
     let context = serde_json::json!({
-        "command": plugin_id,
+        "command": &plugin_id,
         "args": cmd_args,
         "cwd": std::env::current_dir()?.to_string_lossy()
     });
 
-    match runtime.run_cli_command(plugin_id, &context.to_string()) {
+    match runtime.run_cli_command(&plugin_id, &context.to_string()) {
         Ok(result) => {
             println!("{}", result);
             Ok(())
@@ -791,6 +808,143 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
                 eprintln!("{} {}", style(prefix).red().bold(), msg);
             }
             std::process::exit(1);
+        }
+    }
+}
+
+/// Result of plugin auto-installation attempt.
+enum AutoinstallResult {
+    /// Plugin was installed successfully, contains the plugin ID
+    Installed(String),
+    /// No plugin found in registry providing this command
+    NotFound,
+    /// User declined installation
+    Declined,
+    /// Installation failed
+    Failed,
+}
+
+/// Try to auto-install a plugin that provides the given command.
+///
+/// The plugin ID is inferred from the command name using the pattern `adi.cli.{command}`.
+/// For example: `hive` -> `adi.cli.hive`, `agent-loop` -> `adi.cli.agent-loop`.
+///
+/// Note: Core plugins use `adi.{name}` pattern (e.g., `adi.hive`), but CLI plugins
+/// that provide the `adi <command>` interface use `adi.cli.{name}` pattern.
+async fn try_autoinstall_plugin(
+    command: &str,
+    cli_commands: &[adi_cli::plugin_runtime::PluginCliCommand],
+) -> AutoinstallResult {
+    use std::io::{self, Write};
+
+    // Check if auto-install is disabled
+    let auto_install_disabled = std::env::var("ADI_AUTO_INSTALL")
+        .map(|v| v.eq_ignore_ascii_case("false") || v == "0")
+        .unwrap_or(false);
+
+    // Infer plugin ID from command: hive -> adi.cli.hive
+    let plugin_id = format!("adi.cli.{}", command);
+
+    // Try to check if the plugin exists in the registry
+    let manager = PluginManager::new();
+
+    // Try to get plugin info from registry
+    match manager.get_plugin_info(&plugin_id).await {
+        Ok(Some(_info)) => {
+            // Plugin found in registry
+            println!(
+                "{}",
+                t!("external-autoinstall-found", "id" => &plugin_id, "command" => command)
+            );
+
+            if auto_install_disabled {
+                eprintln!("{}", t!("external-autoinstall-disabled", "id" => &plugin_id));
+                return AutoinstallResult::Declined;
+            }
+
+            // Check if running in non-interactive mode (no TTY)
+            let is_interactive = atty::is(atty::Stream::Stdin) && atty::is(atty::Stream::Stdout);
+
+            let should_install = if is_interactive {
+                // Prompt user for confirmation
+                print!("{} ", t!("external-autoinstall-prompt"));
+                io::stdout().flush().ok();
+
+                let mut input = String::new();
+                if io::stdin().read_line(&mut input).is_ok() {
+                    let input = input.trim().to_lowercase();
+                    input == "y" || input == "yes"
+                } else {
+                    false
+                }
+            } else {
+                // Non-interactive: auto-install by default
+                true
+            };
+
+            if !should_install {
+                eprintln!("{}", t!("external-autoinstall-disabled", "id" => &plugin_id));
+                return AutoinstallResult::Declined;
+            }
+
+            // Install the plugin
+            println!("{}", t!("external-autoinstall-installing", "id" => &plugin_id));
+
+            match manager.install_with_dependencies(&plugin_id, None).await {
+                Ok(()) => {
+                    println!(
+                        "{} {}",
+                        style(t!("common-success-prefix")).green().bold(),
+                        t!("external-autoinstall-success")
+                    );
+                    eprintln!(); // Blank line before command output
+                    AutoinstallResult::Installed(plugin_id)
+                }
+                Err(e) => {
+                    eprintln!(
+                        "{} {}",
+                        style(t!("common-error-prefix")).red().bold(),
+                        t!("external-autoinstall-failed", "error" => &e.to_string())
+                    );
+                    AutoinstallResult::Failed
+                }
+            }
+        }
+        Ok(None) | Err(_) => {
+            // Plugin not found in registry - show standard error
+            {
+                let prefix = t!("common-error-prefix");
+                let msg = t!("external-error-unknown", "command" => command);
+                eprintln!("{} {}", style(prefix).red().bold(), msg);
+            }
+            eprintln!();
+
+            // Show hint about registry plugin pattern
+            eprintln!("{}", t!("external-autoinstall-not-found", "command" => command));
+            eprintln!();
+
+            if cli_commands.is_empty() {
+                eprintln!("{}", t!("external-error-no-installed"));
+                eprintln!();
+                eprintln!("{}", t!("external-hint-install"));
+            } else {
+                eprintln!("{}", style(t!("external-available-title")).bold());
+                for cmd in cli_commands {
+                    let aliases = if cmd.aliases.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" (aliases: {})", cmd.aliases.join(", "))
+                    };
+                    eprintln!(
+                        "  {} - {}{}",
+                        style(&cmd.command).cyan().bold(),
+                        cmd.description,
+                        style(aliases).dim()
+                    );
+                }
+            }
+
+            AutoinstallResult::NotFound
         }
     }
 }

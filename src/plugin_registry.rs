@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 use lib_i18n_core::t;
-use lib_plugin_registry::{PluginEntry, RegistryClient, SearchKind, SearchResults};
+use lib_plugin_registry::{PluginEntry, PluginInfo, RegistryClient, SearchKind, SearchResults};
 
 use crate::error::Result;
 
@@ -71,6 +71,18 @@ impl PluginManager {
     pub async fn list_plugins(&self) -> Result<Vec<PluginEntry>> {
         let plugins = self.client.list_plugins().await?;
         Ok(plugins)
+    }
+
+    /// Check if a plugin exists in the registry (without downloading).
+    ///
+    /// Returns Ok(Some(info)) if the plugin exists, Ok(None) if not found,
+    /// or Err on network/other errors.
+    pub async fn get_plugin_info(&self, id: &str) -> Result<Option<PluginInfo>> {
+        match self.client.get_plugin_latest(id).await {
+            Ok(info) => Ok(Some(info)),
+            Err(lib_plugin_registry::RegistryError::NotFound(_)) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 
     pub async fn install_plugin(&self, id: &str, version: Option<&str>) -> Result<()> {
