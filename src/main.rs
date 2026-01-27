@@ -146,6 +146,9 @@ enum DebugCommands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Load .env file from current directory (silently ignore if missing)
+    dotenvy::dotenv().ok();
+
     // Auto-initialize completions on first run
     completions::ensure_completions_installed::<Cli>("adi");
 
