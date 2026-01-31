@@ -1,11 +1,11 @@
 [plugin]
 id = "adi.cli.fr-FR"
 name = "ADI CLI - Français"
-version = "1.0.0"
+version = "3.0.0"
 type = "translation"
 author = "ADI Team"
 description = "French translations for ADI CLI"
-min_host_version = "0.8.0"
+min_host_version = "3.0.0"
 
 [translation]
 translates = "adi.cli"
@@ -15,8 +15,11 @@ namespace = "cli"
 
 [[provides]]
 id = "adi.i18n.cli.fr-FR"
-version = "1.0.0"
+version = "3.0.0"
 description = "French translations for CLI"
 
 [binary]
 name = "plugin"
+
+[compatibility]
+api_version = 3

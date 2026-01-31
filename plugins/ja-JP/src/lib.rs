@@ -1,87 +1,83 @@
-use abi_stable::std_types::{ROption, RResult, RStr, RString, RVec};
-use lib_plugin_abi::{
-    PluginContext, PluginInfo, PluginVTable, ServiceDescriptor, ServiceHandle, ServiceMethod,
-    ServiceVTable, ServiceVersion,
-};
-use std::ffi::c_void;
+//! English translation plugin for ADI CLI (v3)
+//!
+//! Provides English (ja-JP) translations via Fluent message format.
 
+use lib_plugin_abi_v3::*;
+use serde::{Deserialize, Serialize};
+
+// Embedded Fluent messages at compile time
 const MESSAGES_FTL: &str = include_str!("../messages.ftl");
 
-const METADATA_JSON: &str = r#"{
-  "plugin_id": "adi.cli",
-  "language": "ja-JP",
-  "language_name": "日本語",
-  "namespace": "cli",
-  "version": "1.0.0"
-}"#;
-
-const SERVICE_ID: &str = "adi.i18n.cli.ja-JP";
-
-extern "C" fn plugin_info() -> PluginInfo {
-    PluginInfo::new("adi.cli.ja-JP", "ADI CLI - 日本語", "1.0.0", "translation")
-        .with_author("ADI Team")
-        .with_description("Japanese translations for ADI CLI")
-        .with_min_host_version("0.8.0")
+/// Translation metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TranslationMetadata {
+    plugin_id: String,
+    language: String,
+    language_name: String,
+    namespace: String,
+    version: String,
 }
 
-extern "C" fn plugin_init(ctx: *mut PluginContext) -> i32 {
-    unsafe {
-        let host = (*ctx).host();
-        let descriptor =
-            ServiceDescriptor::new(SERVICE_ID, ServiceVersion::new(1, 0, 0), "adi.cli.ja-JP")
-                .with_description("Japanese translations for ADI CLI");
-        let handle = ServiceHandle::new(
-            SERVICE_ID,
-            ctx as *const c_void,
-            &TRANSLATION_SERVICE_VTABLE as *const ServiceVTable,
-        );
-        if let Err(code) = host.register_svc(descriptor, handle) {
-            host.error(&format!("Failed to register translation service: {}", code));
-            return code;
+/// English translation plugin
+pub struct JapanesePlugin {
+    metadata: TranslationMetadata,
+}
+
+impl JapanesePlugin {
+    pub fn new() -> Self {
+        Self {
+            metadata: TranslationMetadata {
+                plugin_id: "adi.cli".to_string(),
+                language: "ja-JP".to_string(),
+                language_name: "Japanese".to_string(),
+                namespace: "cli".to_string(),
+                version: "3.0.0".to_string(),
+            },
         }
-        host.info("ADI CLI Japanese translation plugin initialized");
     }
-    0
-}
 
-extern "C" fn plugin_cleanup(_ctx: *mut PluginContext) {}
+    /// Get Fluent messages (.ftl file content)
+    pub fn get_messages(&self) -> &'static str {
+        MESSAGES_FTL
+    }
 
-extern "C" fn service_invoke(
-    _handle: *const c_void,
-    method: RStr<'_>,
-    _args: RStr<'_>,
-) -> RResult<RString, lib_plugin_abi::ServiceError> {
-    match method.as_str() {
-        "get_messages" => RResult::ROk(RString::from(MESSAGES_FTL)),
-        "get_metadata" => RResult::ROk(RString::from(METADATA_JSON)),
-        _ => RResult::RErr(lib_plugin_abi::ServiceError::method_not_found(
-            method.as_str(),
-        )),
+    /// Get translation metadata as JSON
+    pub fn get_metadata_json(&self) -> Result<String> {
+        Ok(serde_json::to_string(&self.metadata)?)
     }
 }
 
-extern "C" fn service_list_methods(_handle: *const c_void) -> RVec<ServiceMethod> {
-    vec![
-        ServiceMethod::new("get_messages").with_description("Get Fluent .ftl file content"),
-        ServiceMethod::new("get_metadata").with_description("Get translation metadata as JSON"),
-    ]
-    .into()
+impl Plugin for JapanesePlugin {
+    fn metadata(&self) -> PluginMetadata {
+        PluginMetadata {
+            id: "adi.cli.ja-JP".to_string(),
+            name: "ADI CLI - English".to_string(),
+            version: "3.0.0".to_string(),
+            plugin_type: PluginType::Extension,
+            author: Some("ADI Team".to_string()),
+            description: Some("English translations for ADI CLI".to_string()),
+        }
+    }
+
+    async fn init(&mut self, _ctx: &PluginContext) -> Result<()> {
+        // No initialization needed for static translations
+        Ok(())
+    }
+
+    async fn shutdown(&self) -> Result<()> {
+        // No cleanup needed
+        Ok(())
+    }
 }
 
-static TRANSLATION_SERVICE_VTABLE: ServiceVTable = ServiceVTable {
-    invoke: service_invoke,
-    list_methods: service_list_methods,
-};
+impl Default for JapanesePlugin {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-static PLUGIN_VTABLE: PluginVTable = PluginVTable {
-    info: plugin_info,
-    init: plugin_init,
-    update: ROption::RNone,
-    cleanup: plugin_cleanup,
-    handle_message: ROption::RNone,
-};
-
+// Plugin entry point
 #[no_mangle]
-pub extern "C" fn plugin_entry() -> *const PluginVTable {
-    &PLUGIN_VTABLE
+pub fn plugin_create() -> Box<dyn Plugin> {
+    Box::new(JapanesePlugin::new())
 }
