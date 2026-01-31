@@ -51,4 +51,10 @@ impl From<lib_plugin_abi::ServiceError> for InstallerError {
     }
 }
 
+impl From<lib_plugin_abi_v3::PluginError> for InstallerError {
+    fn from(e: lib_plugin_abi_v3::PluginError) -> Self {
+        InstallerError::Other(e.to_string())
+    }
+}
+
 pub type Result<T> = std::result::Result<T, InstallerError>;

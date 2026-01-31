@@ -37,6 +37,7 @@ lib-client-github = { path = "../lib/lib-client/github" }
 lib-plugin-registry = { path = "../lib/lib-plugin-registry" }
 lib-plugin-host = { path = "../lib/lib-plugin-host" }
 lib-plugin-abi = { path = "../lib/lib-plugin-abi" }
+lib-plugin-abi-v3 = { path = "../lib/lib-plugin-abi-v3" }
 lib-plugin-manifest = { path = "../lib/lib-plugin-manifest" }
 
 # Internationalization

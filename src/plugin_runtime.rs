@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use lib_plugin_abi::{ServiceDescriptor, SERVICE_CLI_COMMANDS, SERVICE_HTTP_ROUTES};
-use lib_plugin_host::{PluginConfig, PluginHost, ServiceRegistry};
+use lib_plugin_host::{LoadedPluginV3, PluginConfig, PluginHost, PluginManagerV3, ServiceRegistry};
 use lib_plugin_manifest::PluginManifest;
 
 use crate::error::Result;
@@ -60,7 +60,8 @@ impl Default for RuntimeConfig {
 /// Plugin runtime managing plugin lifecycle and service dispatch.
 /// Uses RwLock because PluginHost requires mutable access for scanning/enabling.
 pub struct PluginRuntime {
-    host: Arc<RwLock<PluginHost>>,
+    host: Arc<RwLock<PluginHost>>,           // v2 loader
+    manager_v3: Arc<RwLock<PluginManagerV3>>, // v3 loader
     config: RuntimeConfig,
 }
 
@@ -87,9 +88,11 @@ impl PluginRuntime {
         };
 
         let host = PluginHost::new(plugin_config)?;
+        let manager_v3 = PluginManagerV3::new();
 
         Ok(Self {
             host: Arc::new(RwLock::new(host)),
+            manager_v3: Arc::new(RwLock::new(manager_v3)),
             config,
         })
     }
@@ -111,13 +114,16 @@ impl PluginRuntime {
 
     /// Scan and load all installed plugins.
     pub async fn load_all_plugins(&self) -> Result<()> {
+        // Scan for v2 plugins
         let mut host = self.host.write().unwrap();
         host.scan_installed()?;
 
-        // Enable all discovered plugins
+        // Enable all discovered v2 plugins
         let plugin_ids: Vec<String> = host.plugins().map(|p| p.id().to_string()).collect();
+        drop(host); // Release lock before async operations
+
         for plugin_id in plugin_ids {
-            if let Err(e) = host.enable(&plugin_id) {
+            if let Err(e) = self.load_plugin_internal(&plugin_id).await {
                 tracing::warn!("Failed to enable plugin {}: {}", plugin_id, e);
             }
         }
@@ -125,19 +131,94 @@ impl PluginRuntime {
         Ok(())
     }
 
+    /// Internal method to load a plugin by detecting its version
+    async fn load_plugin_internal(&self, plugin_id: &str) -> Result<()> {
+        // Find the plugin manifest
+        let manifest = self.find_plugin_manifest(plugin_id)?;
+
+        // Check API version
+        match manifest.compatibility.api_version {
+            3 => self.load_v3_plugin(&manifest).await?,
+            _ => {
+                // v2 or v1 - use old loader
+                self.host.write().unwrap().enable(plugin_id)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Load a v3 plugin
+    async fn load_v3_plugin(&self, manifest: &PluginManifest) -> Result<()> {
+        let plugin_dir = self.resolve_plugin_dir(&manifest.plugin.id)?;
+
+        match LoadedPluginV3::load(manifest.clone(), &plugin_dir).await {
+            Ok(loaded) => {
+                let plugin_id = manifest.plugin.id.clone();
+
+                // Register the plugin
+                self.manager_v3.write().unwrap().register(loaded)?;
+
+                tracing::info!("Loaded v3 plugin: {}", plugin_id);
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!("Failed to load v3 plugin {}: {}", manifest.plugin.id, e);
+                Err(crate::error::InstallerError::Other(format!(
+                    "Failed to load v3 plugin: {}",
+                    e
+                )))
+            }
+        }
+    }
+
+    /// Find plugin manifest by ID
+    fn find_plugin_manifest(&self, plugin_id: &str) -> Result<PluginManifest> {
+        let plugin_dir = self.config.plugins_dir.join(plugin_id);
+
+        if let Some(manifest_path) = Self::find_plugin_toml_path(&plugin_dir) {
+            PluginManifest::from_file(&manifest_path)
+                .map_err(|e| crate::error::InstallerError::Other(e.to_string()))
+        } else {
+            Err(crate::error::InstallerError::PluginNotFound {
+                id: plugin_id.to_string(),
+            })
+        }
+    }
+
+    /// Resolve the plugin directory (handles versioned directories)
+    fn resolve_plugin_dir(&self, plugin_id: &str) -> Result<PathBuf> {
+        let plugin_dir = self.config.plugins_dir.join(plugin_id);
+
+        // Check for .version file to get current version
+        let version_file = plugin_dir.join(".version");
+        if version_file.exists() {
+            if let Ok(version) = std::fs::read_to_string(&version_file) {
+                let version = version.trim();
+                let versioned_dir = plugin_dir.join(version);
+                if versioned_dir.exists() {
+                    return Ok(versioned_dir);
+                }
+            }
+        }
+
+        // Fallback to plugin_dir itself
+        Ok(plugin_dir)
+    }
+
     /// Load a specific plugin by ID.
     pub async fn load_plugin(&self, plugin_id: &str) -> Result<()> {
-        self.host.write().unwrap().enable(plugin_id)?;
-        Ok(())
+        self.load_plugin_internal(plugin_id).await
     }
 
     /// Scan installed plugins and load a specific plugin by ID.
     /// This is useful when you only want to load one plugin without loading all.
     pub async fn scan_and_load_plugin(&self, plugin_id: &str) -> Result<()> {
-        let mut host = self.host.write().unwrap();
-        host.scan_installed()?;
-        host.enable(plugin_id)?;
-        Ok(())
+        // Scan both v2 and v3 plugins
+        self.host.write().unwrap().scan_installed()?;
+
+        // Load the specific plugin (auto-detects version)
+        self.load_plugin_internal(plugin_id).await
     }
 
     /// Unload a plugin.
@@ -237,28 +318,121 @@ impl PluginRuntime {
     }
 
     /// Run a CLI command for a specific plugin. Returns result string.
-    pub fn run_cli_command(&self, plugin_id: &str, context_json: &str) -> Result<String> {
-        // Look up plugin-specific CLI service (e.g., "adi.tasks.cli")
+    pub async fn run_cli_command(&self, plugin_id: &str, context_json: &str) -> Result<String> {
+        // First, check if it's a v3 plugin
+        {
+            let manager = self.manager_v3.read().unwrap();
+            if let Some(plugin) = manager.get_cli_commands(plugin_id) {
+                // It's a v3 plugin - parse context and call async method
+                let ctx = self.parse_cli_context(context_json)?;
+                let result = plugin
+                    .run_command(&ctx)
+                    .await
+                    .map_err(|e| crate::error::InstallerError::Other(e.to_string()))?;
+
+                // Format result as JSON for compatibility
+                return Ok(serde_json::to_string(&serde_json::json!({
+                    "exit_code": result.exit_code,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }))
+                .unwrap());
+            }
+        }
+
+        // Fall back to v2 plugin (JSON-RPC)
         let service_id = format!("{}.cli", plugin_id);
         let registry = self.service_registry();
         let handle = registry
             .lookup(&service_id)
-            .ok_or_else(|| crate::error::InstallerError::PluginNotFound { id: service_id })?;
+            .ok_or_else(|| crate::error::InstallerError::PluginNotFound {
+                id: service_id.clone(),
+            })?;
 
         let result = unsafe { handle.invoke("run_command", context_json)? };
         Ok(result)
     }
 
     /// List CLI commands for a specific plugin. Returns JSON array of commands.
-    pub fn list_cli_commands(&self, plugin_id: &str) -> Result<String> {
+    pub async fn list_cli_commands(&self, plugin_id: &str) -> Result<String> {
+        // First, check if it's a v3 plugin
+        {
+            let manager = self.manager_v3.read().unwrap();
+            if let Some(plugin) = manager.get_cli_commands(plugin_id) {
+                // It's a v3 plugin - call async method
+                let commands = plugin.list_commands().await;
+                return Ok(serde_json::to_string(&commands).unwrap());
+            }
+        }
+
+        // Fall back to v2 plugin (JSON-RPC)
         let service_id = format!("{}.cli", plugin_id);
         let registry = self.service_registry();
         let handle = registry
             .lookup(&service_id)
-            .ok_or_else(|| crate::error::InstallerError::PluginNotFound { id: service_id })?;
+            .ok_or_else(|| crate::error::InstallerError::PluginNotFound {
+                id: service_id.clone(),
+            })?;
 
         let result = unsafe { handle.invoke("list_commands", "{}")? };
         Ok(result)
+    }
+
+    /// Parse JSON context into CliContext for v3 plugins
+    fn parse_cli_context(&self, context_json: &str) -> Result<lib_plugin_abi_v3::cli::CliContext> {
+        use lib_plugin_abi_v3::cli::CliContext;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        // Parse the JSON context
+        let value: serde_json::Value = serde_json::from_str(context_json)
+            .map_err(|e| crate::error::InstallerError::Other(e.to_string()))?;
+
+        // Extract fields
+        let command = value
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let args: Vec<String> = value
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let cwd = value
+            .get("cwd")
+            .and_then(|v| v.as_str())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+
+        // Extract subcommand (first arg if present)
+        let subcommand = args.first().cloned();
+
+        // Build options map from remaining args
+        let mut options = HashMap::new();
+        if let Some(opts) = value.get("options").and_then(|v| v.as_object()) {
+            for (k, v) in opts {
+                options.insert(k.clone(), v.clone());
+            }
+        }
+
+        // Get environment variables
+        let env = std::env::vars().collect();
+
+        Ok(CliContext {
+            command,
+            subcommand,
+            args: args.into_iter().skip(1).collect(), // Skip subcommand from args
+            options,
+            cwd,
+            env,
+        })
     }
 
     /// Discover CLI commands from installed plugin manifests.
@@ -286,7 +460,7 @@ impl PluginRuntime {
                 }
 
                 // Try to find plugin.toml in versioned subdirectory
-                let manifest_path = Self::find_plugin_manifest(&plugin_dir);
+                let manifest_path = Self::find_plugin_toml_path(&plugin_dir);
                 if let Some(manifest_path) = manifest_path {
                     if let Ok(manifest) = PluginManifest::from_file(&manifest_path) {
                         if let Some(cli) = &manifest.cli {
@@ -307,7 +481,7 @@ impl PluginRuntime {
 
     /// Find the plugin.toml manifest in a plugin directory.
     /// Handles versioned directories (e.g., plugins/adi.tasks/0.8.8/plugin.toml)
-    fn find_plugin_manifest(plugin_dir: &PathBuf) -> Option<PathBuf> {
+    fn find_plugin_toml_path(plugin_dir: &PathBuf) -> Option<PathBuf> {
         // First, check for .version file to get current version
         let version_file = plugin_dir.join(".version");
         if version_file.exists() {
@@ -357,6 +531,7 @@ impl Clone for PluginRuntime {
     fn clone(&self) -> Self {
         Self {
             host: Arc::clone(&self.host),
+            manager_v3: Arc::clone(&self.manager_v3),
             config: self.config.clone(),
         }
     }

@@ -710,7 +710,7 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
         "cwd": std::env::current_dir()?.to_string_lossy()
     });
 
-    match runtime.run_cli_command(&plugin_id, &context.to_string()) {
+    match runtime.run_cli_command(&plugin_id, &context.to_string()).await {
         Ok(result) => {
             println!("{}", result);
             Ok(())
@@ -799,7 +799,7 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
         "cwd": std::env::current_dir()?.to_string_lossy()
     });
 
-    match runtime.run_cli_command(&plugin_id, &context.to_string()) {
+    match runtime.run_cli_command(&plugin_id, &context.to_string()).await {
         Ok(result) => {
             println!("{}", result);
             Ok(())
@@ -1085,7 +1085,7 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
             "cwd": std::env::current_dir().unwrap_or_default().to_string_lossy()
         });
 
-        runtime.run_cli_command("adi.cocoon", &install_context.to_string())?;
+        runtime.run_cli_command("adi.cocoon", &install_context.to_string()).await?;
 
         println!(
             "{}",
