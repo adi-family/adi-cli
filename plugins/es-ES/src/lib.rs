@@ -1,6 +1,6 @@
-//! English translation plugin for ADI CLI (v3)
+//! Spanish translation plugin for ADI CLI (v3)
 //!
-//! Provides English (es-ES) translations via Fluent message format.
+//! Provides Spanish (es-ES) translations via Fluent message format.
 
 use lib_plugin_abi_v3::*;
 use serde::{Deserialize, Serialize};
@@ -18,12 +18,12 @@ struct TranslationMetadata {
     version: String,
 }
 
-/// English translation plugin
-pub struct Spanish(Spain)Plugin {
+/// Spanish translation plugin
+pub struct SpanishPlugin {
     metadata: TranslationMetadata,
 }
 
-impl Spanish(Spain)Plugin {
+impl SpanishPlugin {
     pub fn new() -> Self {
         Self {
             metadata: TranslationMetadata {
@@ -47,15 +47,16 @@ impl Spanish(Spain)Plugin {
     }
 }
 
-impl Plugin for Spanish(Spain)Plugin {
+#[async_trait]
+impl Plugin for SpanishPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             id: "adi.cli.es-ES".to_string(),
-            name: "ADI CLI - English".to_string(),
+            name: "ADI CLI - Spanish".to_string(),
             version: "3.0.0".to_string(),
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
-            description: Some("English translations for ADI CLI".to_string()),
+            description: Some("Spanish translations for ADI CLI".to_string()),
         }
     }
 
@@ -70,7 +71,7 @@ impl Plugin for Spanish(Spain)Plugin {
     }
 }
 
-impl Default for Spanish(Spain)Plugin {
+impl Default for SpanishPlugin {
     fn default() -> Self {
         Self::new()
     }
@@ -79,5 +80,5 @@ impl Default for Spanish(Spain)Plugin {
 // Plugin entry point
 #[no_mangle]
 pub fn plugin_create() -> Box<dyn Plugin> {
-    Box::new(Spanish(Spain)Plugin::new())
+    Box::new(SpanishPlugin::new())
 }

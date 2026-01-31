@@ -1,6 +1,6 @@
-//! English translation plugin for ADI CLI (v3)
+//! Korean translation plugin for ADI CLI (v3)
 //!
-//! Provides English (ko-KR) translations via Fluent message format.
+//! Provides Korean (ko-KR) translations via Fluent message format.
 
 use lib_plugin_abi_v3::*;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ struct TranslationMetadata {
     version: String,
 }
 
-/// English translation plugin
+/// Korean translation plugin
 pub struct KoreanPlugin {
     metadata: TranslationMetadata,
 }
@@ -47,15 +47,16 @@ impl KoreanPlugin {
     }
 }
 
+#[async_trait]
 impl Plugin for KoreanPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             id: "adi.cli.ko-KR".to_string(),
-            name: "ADI CLI - English".to_string(),
+            name: "ADI CLI - Korean".to_string(),
             version: "3.0.0".to_string(),
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
-            description: Some("English translations for ADI CLI".to_string()),
+            description: Some("Korean translations for ADI CLI".to_string()),
         }
     }
 

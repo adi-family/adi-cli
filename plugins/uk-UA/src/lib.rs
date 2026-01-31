@@ -1,6 +1,6 @@
-//! English translation plugin for ADI CLI (v3)
+//! Ukrainian translation plugin for ADI CLI (v3)
 //!
-//! Provides English (uk-UA) translations via Fluent message format.
+//! Provides Ukrainian (uk-UA) translations via Fluent message format.
 
 use lib_plugin_abi_v3::*;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ struct TranslationMetadata {
     version: String,
 }
 
-/// English translation plugin
+/// Ukrainian translation plugin
 pub struct UkrainianPlugin {
     metadata: TranslationMetadata,
 }
@@ -47,15 +47,16 @@ impl UkrainianPlugin {
     }
 }
 
+#[async_trait]
 impl Plugin for UkrainianPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             id: "adi.cli.uk-UA".to_string(),
-            name: "ADI CLI - English".to_string(),
+            name: "ADI CLI - Ukrainian".to_string(),
             version: "3.0.0".to_string(),
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
-            description: Some("English translations for ADI CLI".to_string()),
+            description: Some("Ukrainian translations for ADI CLI".to_string()),
         }
     }
 

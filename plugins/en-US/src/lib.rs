@@ -47,6 +47,7 @@ impl EnglishTranslationPlugin {
     }
 }
 
+#[async_trait]
 impl Plugin for EnglishTranslationPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {

@@ -10,5 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 lib-plugin-abi-v3 = { path = "../../../lib/lib-plugin-abi-v3" }
+serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1"
 serde_json = "1.0"

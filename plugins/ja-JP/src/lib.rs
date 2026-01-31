@@ -1,6 +1,6 @@
-//! English translation plugin for ADI CLI (v3)
+//! Japanese translation plugin for ADI CLI (v3)
 //!
-//! Provides English (ja-JP) translations via Fluent message format.
+//! Provides Japanese (ja-JP) translations via Fluent message format.
 
 use lib_plugin_abi_v3::*;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ struct TranslationMetadata {
     version: String,
 }
 
-/// English translation plugin
+/// Japanese translation plugin
 pub struct JapanesePlugin {
     metadata: TranslationMetadata,
 }
@@ -47,15 +47,16 @@ impl JapanesePlugin {
     }
 }
 
+#[async_trait]
 impl Plugin for JapanesePlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             id: "adi.cli.ja-JP".to_string(),
-            name: "ADI CLI - English".to_string(),
+            name: "ADI CLI - Japanese".to_string(),
             version: "3.0.0".to_string(),
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
-            description: Some("English translations for ADI CLI".to_string()),
+            description: Some("Japanese translations for ADI CLI".to_string()),
         }
     }
 

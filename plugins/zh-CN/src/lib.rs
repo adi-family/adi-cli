@@ -1,6 +1,6 @@
-//! English translation plugin for ADI CLI (v3)
+//! Chinese (Simplified) translation plugin for ADI CLI (v3)
 //!
-//! Provides English (zh-CN) translations via Fluent message format.
+//! Provides Chinese (zh-CN) translations via Fluent message format.
 
 use lib_plugin_abi_v3::*;
 use serde::{Deserialize, Serialize};
@@ -18,12 +18,12 @@ struct TranslationMetadata {
     version: String,
 }
 
-/// English translation plugin
-pub struct Chinese(Simplified)Plugin {
+/// Chinese (Simplified) translation plugin
+pub struct ChineseSimplifiedPlugin {
     metadata: TranslationMetadata,
 }
 
-impl Chinese(Simplified)Plugin {
+impl ChineseSimplifiedPlugin {
     pub fn new() -> Self {
         Self {
             metadata: TranslationMetadata {
@@ -47,15 +47,16 @@ impl Chinese(Simplified)Plugin {
     }
 }
 
-impl Plugin for Chinese(Simplified)Plugin {
+#[async_trait]
+impl Plugin for ChineseSimplifiedPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             id: "adi.cli.zh-CN".to_string(),
-            name: "ADI CLI - English".to_string(),
+            name: "ADI CLI - Chinese (Simplified)".to_string(),
             version: "3.0.0".to_string(),
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
-            description: Some("English translations for ADI CLI".to_string()),
+            description: Some("Chinese (Simplified) translations for ADI CLI".to_string()),
         }
     }
 
@@ -70,7 +71,7 @@ impl Plugin for Chinese(Simplified)Plugin {
     }
 }
 
-impl Default for Chinese(Simplified)Plugin {
+impl Default for ChineseSimplifiedPlugin {
     fn default() -> Self {
         Self::new()
     }
@@ -79,5 +80,5 @@ impl Default for Chinese(Simplified)Plugin {
 // Plugin entry point
 #[no_mangle]
 pub fn plugin_create() -> Box<dyn Plugin> {
-    Box::new(Chinese(Simplified)Plugin::new())
+    Box::new(ChineseSimplifiedPlugin::new())
 }

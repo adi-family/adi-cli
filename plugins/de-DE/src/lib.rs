@@ -1,6 +1,6 @@
-//! English translation plugin for ADI CLI (v3)
+//! German translation plugin for ADI CLI (v3)
 //!
-//! Provides English (de-DE) translations via Fluent message format.
+//! Provides German (de-DE) translations via Fluent message format.
 
 use lib_plugin_abi_v3::*;
 use serde::{Deserialize, Serialize};
@@ -18,12 +18,12 @@ struct TranslationMetadata {
     version: String,
 }
 
-/// English translation plugin
-pub struct German(Germany)Plugin {
+/// German translation plugin
+pub struct GermanPlugin {
     metadata: TranslationMetadata,
 }
 
-impl German(Germany)Plugin {
+impl GermanPlugin {
     pub fn new() -> Self {
         Self {
             metadata: TranslationMetadata {
@@ -47,15 +47,16 @@ impl German(Germany)Plugin {
     }
 }
 
-impl Plugin for German(Germany)Plugin {
+#[async_trait]
+impl Plugin for GermanPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             id: "adi.cli.de-DE".to_string(),
-            name: "ADI CLI - English".to_string(),
+            name: "ADI CLI - German".to_string(),
             version: "3.0.0".to_string(),
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
-            description: Some("English translations for ADI CLI".to_string()),
+            description: Some("German translations for ADI CLI".to_string()),
         }
     }
 
@@ -70,7 +71,7 @@ impl Plugin for German(Germany)Plugin {
     }
 }
 
-impl Default for German(Germany)Plugin {
+impl Default for GermanPlugin {
     fn default() -> Self {
         Self::new()
     }
@@ -79,5 +80,5 @@ impl Default for German(Germany)Plugin {
 // Plugin entry point
 #[no_mangle]
 pub fn plugin_create() -> Box<dyn Plugin> {
-    Box::new(German(Germany)Plugin::new())
+    Box::new(GermanPlugin::new())
 }

@@ -1,6 +1,6 @@
-//! English translation plugin for ADI CLI (v3)
+//! Russian translation plugin for ADI CLI (v3)
 //!
-//! Provides English (ru-RU) translations via Fluent message format.
+//! Provides Russian (ru-RU) translations via Fluent message format.
 
 use lib_plugin_abi_v3::*;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ struct TranslationMetadata {
     version: String,
 }
 
-/// English translation plugin
+/// Russian translation plugin
 pub struct RussianPlugin {
     metadata: TranslationMetadata,
 }
@@ -47,15 +47,16 @@ impl RussianPlugin {
     }
 }
 
+#[async_trait]
 impl Plugin for RussianPlugin {
     fn metadata(&self) -> PluginMetadata {
         PluginMetadata {
             id: "adi.cli.ru-RU".to_string(),
-            name: "ADI CLI - English".to_string(),
+            name: "ADI CLI - Russian".to_string(),
             version: "3.0.0".to_string(),
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
-            description: Some("English translations for ADI CLI".to_string()),
+            description: Some("Russian translations for ADI CLI".to_string()),
         }
     }
 
