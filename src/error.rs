@@ -45,12 +45,6 @@ pub enum InstallerError {
     Other(String),
 }
 
-impl From<lib_plugin_abi::ServiceError> for InstallerError {
-    fn from(e: lib_plugin_abi::ServiceError) -> Self {
-        InstallerError::Service(e.message.to_string())
-    }
-}
-
 impl From<lib_plugin_abi_v3::PluginError> for InstallerError {
     fn from(e: lib_plugin_abi_v3::PluginError) -> Self {
         InstallerError::Other(e.to_string())

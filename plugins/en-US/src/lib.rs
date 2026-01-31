@@ -57,6 +57,7 @@ impl Plugin for EnglishTranslationPlugin {
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
             description: Some("English translations for ADI CLI".to_string()),
+            category: None,
         }
     }
 

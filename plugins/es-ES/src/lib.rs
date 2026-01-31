@@ -57,6 +57,7 @@ impl Plugin for SpanishPlugin {
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
             description: Some("Spanish translations for ADI CLI".to_string()),
+            category: None,
         }
     }
 

@@ -57,6 +57,7 @@ impl Plugin for FrenchPlugin {
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
             description: Some("French translations for ADI CLI".to_string()),
+            category: None,
         }
     }
 

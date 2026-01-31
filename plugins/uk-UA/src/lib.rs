@@ -57,6 +57,7 @@ impl Plugin for UkrainianPlugin {
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
             description: Some("Ukrainian translations for ADI CLI".to_string()),
+            category: None,
         }
     }
 

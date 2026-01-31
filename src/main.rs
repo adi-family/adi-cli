@@ -5,15 +5,7 @@ use adi_cli::user_config::UserConfig;
 use clap::{Parser, Subcommand};
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
-use lib_i18n_core::{
-    init_global, t, I18n, ServiceDescriptor as I18nServiceDescriptor,
-    ServiceHandle as I18nServiceHandle, ServiceRegistry as I18nServiceRegistry,
-};
-use lib_plugin_abi::{
-    ServiceDescriptor as PluginServiceDescriptor, ServiceError,
-    ServiceHandle as PluginServiceHandle,
-};
-use lib_plugin_host::ServiceRegistry as PluginServiceRegistry;
+use lib_i18n_core::{init_global, t, I18n};
 use std::sync::Arc;
 
 #[derive(Parser)]
@@ -213,52 +205,7 @@ fn cmd_init(shell: Option<CompletionShell>) -> anyhow::Result<()> {
     Ok(())
 }
 
-// Adapter to bridge lib-plugin-host ServiceRegistry to lib-i18n-core ServiceRegistry
-struct ServiceRegistryAdapter {
-    inner: Arc<PluginServiceRegistry>,
-}
 
-impl I18nServiceRegistry for ServiceRegistryAdapter {
-    fn list_services(&self) -> lib_i18n_core::Result<Vec<I18nServiceDescriptor>> {
-        Ok(self
-            .inner
-            .list()
-            .into_iter()
-            .map(|s: PluginServiceDescriptor| I18nServiceDescriptor::new(s.id.as_str().to_string()))
-            .collect())
-    }
-
-    fn lookup_service(
-        &self,
-        service_id: &str,
-    ) -> lib_i18n_core::Result<Box<dyn I18nServiceHandle>> {
-        self.inner
-            .lookup(service_id)
-            .map(|handle| {
-                Box::new(ServiceHandleAdapter { inner: handle }) as Box<dyn I18nServiceHandle>
-            })
-            .ok_or_else(|| {
-                lib_i18n_core::I18nError::ServiceRegistryError(format!(
-                    "Service not found: {}",
-                    service_id
-                ))
-            })
-    }
-}
-
-struct ServiceHandleAdapter {
-    inner: PluginServiceHandle,
-}
-
-impl I18nServiceHandle for ServiceHandleAdapter {
-    fn invoke(&self, method: &str, args: &str) -> lib_i18n_core::Result<String> {
-        unsafe {
-            self.inner.invoke(method, args).map_err(|e: ServiceError| {
-                lib_i18n_core::I18nError::ServiceInvokeError(e.to_string())
-            })
-        }
-    }
-}
 
 /// Available languages with display names
 const AVAILABLE_LANGUAGES: &[(&str, &str)] = &[
@@ -350,14 +297,36 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
         "en-US".to_string()
     };
 
-    // Create plugin runtime and load translation plugin
-    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
-    let translation_id = format!("adi.cli.{}", effective_lang);
+    // Initialize i18n with direct FTL file loading (no plugin service registry needed)
+    let mut i18n = I18n::new_standalone();
 
-    // Try to load user's language plugin
-    if runtime.scan_and_load_plugin(&translation_id).await.is_err() {
-        // Plugin not installed - try to install it automatically
-        if effective_lang != "en-US" {
+    // Load embedded English translations as fallback (always available)
+    let _ = i18n.load_embedded("en-US", include_str!("../plugins/en-US/messages.ftl"));
+
+    // Try to load additional language from installed plugins
+    if effective_lang != "en-US" {
+        let translation_id = format!("adi.cli.{}", effective_lang);
+        
+        // Get plugins directory
+        let plugins_dir = dirs::data_local_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join("adi")
+            .join("plugins");
+
+        // Try to load from installed plugin
+        let plugin_dir = plugins_dir.join(&translation_id);
+        let ftl_loaded = if let Some(ftl_path) = find_messages_ftl(&plugin_dir) {
+            if let Ok(ftl_content) = std::fs::read_to_string(&ftl_path) {
+                i18n.load_embedded(&effective_lang, &ftl_content).is_ok()
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        // If not found, try to install from registry
+        if !ftl_loaded {
             println!(
                 "{}",
                 style(format!(
@@ -368,14 +337,14 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
             );
 
             let manager = PluginManager::new();
-            if let Ok(()) = manager.install_plugin(&translation_id, None).await {
+            if manager.install_plugin(&translation_id, None).await.is_ok() {
                 // Successfully installed, try loading again
-                if runtime.scan_and_load_plugin(&translation_id).await.is_err() {
-                    eprintln!("{}", style(format!("Warning: Failed to load {} after installation, falling back to English", translation_id)).yellow());
-                    let _ = runtime.scan_and_load_plugin("adi.cli.en-US").await;
+                if let Some(ftl_path) = find_messages_ftl(&plugin_dir) {
+                    if let Ok(ftl_content) = std::fs::read_to_string(&ftl_path) {
+                        let _ = i18n.load_embedded(&effective_lang, &ftl_content);
+                    }
                 }
             } else {
-                // Installation failed, fallback to English
                 eprintln!(
                     "{}",
                     style(format!(
@@ -384,25 +353,9 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
                     ))
                     .yellow()
                 );
-                let _ = runtime.scan_and_load_plugin("adi.cli.en-US").await;
             }
-        } else {
-            // English not found, try loading it anyway (shouldn't happen)
-            let _ = runtime.scan_and_load_plugin("adi.cli.en-US").await;
         }
     }
-
-    // Initialize i18n with service registry (via adapter)
-    let adapter = Arc::new(ServiceRegistryAdapter {
-        inner: runtime.service_registry(),
-    });
-    let mut i18n = I18n::new(adapter).with_namespace("cli");
-
-    // Load embedded English translations as fallback (always available)
-    let _ = i18n.load_embedded("en-US", include_str!("../plugins/en-US/messages.ftl"));
-
-    // Discover additional translations from plugins
-    i18n.discover_translations()?;
 
     // Try to set requested language, fallback to en-US if not available
     if i18n.set_language(&effective_lang).is_err() {
@@ -411,6 +364,42 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
     init_global(i18n);
 
     Ok(())
+}
+
+/// Find the messages.ftl file in a plugin directory (handles versioned directories)
+fn find_messages_ftl(plugin_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    // Check for .version file to get current version
+    let version_file = plugin_dir.join(".version");
+    if version_file.exists() {
+        if let Ok(version) = std::fs::read_to_string(&version_file) {
+            let version = version.trim();
+            let ftl_path = plugin_dir.join(version).join("messages.ftl");
+            if ftl_path.exists() {
+                return Some(ftl_path);
+            }
+        }
+    }
+
+    // Fallback: check for messages.ftl directly in plugin dir
+    let direct_ftl = plugin_dir.join("messages.ftl");
+    if direct_ftl.exists() {
+        return Some(direct_ftl);
+    }
+
+    // Fallback: scan subdirectories for messages.ftl
+    if let Ok(entries) = std::fs::read_dir(plugin_dir) {
+        for entry in entries.flatten() {
+            let subdir = entry.path();
+            if subdir.is_dir() {
+                let ftl_path = subdir.join("messages.ftl");
+                if ftl_path.exists() {
+                    return Some(ftl_path);
+                }
+            }
+        }
+    }
+
+    None
 }
 
 async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
@@ -622,9 +611,9 @@ async fn cmd_services() -> anyhow::Result<()> {
     let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
     runtime.load_all_plugins().await?;
 
-    let services = runtime.list_services();
+    let plugins = runtime.list_installed();
 
-    if services.is_empty() {
+    if plugins.is_empty() {
         println!("{}", t!("services-empty"));
         println!();
         println!("{}", t!("services-hint"));
@@ -634,18 +623,8 @@ async fn cmd_services() -> anyhow::Result<()> {
     println!("{}", style(t!("services-title")).bold());
     println!();
 
-    for service in services {
-        println!(
-            "  {} {} - {} [from {}]",
-            style(service.id.as_str()).cyan().bold(),
-            style(format!(
-                "v{}.{}.{}",
-                service.version.major, service.version.minor, service.version.patch
-            ))
-            .dim(),
-            service.description.as_str(),
-            style(service.provider_id.as_str()).yellow()
-        );
+    for plugin_id in plugins {
+        println!("  {}", style(&plugin_id).cyan().bold());
     }
 
     Ok(())

@@ -57,6 +57,7 @@ impl Plugin for JapanesePlugin {
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
             description: Some("Japanese translations for ADI CLI".to_string()),
+            category: None,
         }
     }
 

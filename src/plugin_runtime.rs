@@ -2,12 +2,13 @@
 //!
 //! Provides a unified interface for loading plugins, registering services,
 //! and dispatching requests to plugin-provided HTTP/CLI handlers.
+//!
+//! All plugins use the v3 ABI (lib_plugin_abi_v3).
 
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-use lib_plugin_abi::{ServiceDescriptor, SERVICE_CLI_COMMANDS, SERVICE_HTTP_ROUTES};
-use lib_plugin_host::{LoadedPluginV3, PluginConfig, PluginHost, PluginManagerV3, ServiceRegistry};
+use lib_plugin_host::{LoadedPluginV3, PluginManagerV3};
 use lib_plugin_manifest::PluginManifest;
 
 use crate::error::Result;
@@ -58,10 +59,9 @@ impl Default for RuntimeConfig {
 }
 
 /// Plugin runtime managing plugin lifecycle and service dispatch.
-/// Uses RwLock because PluginHost requires mutable access for scanning/enabling.
+/// Uses RwLock because PluginManagerV3 requires mutable access for registration.
 pub struct PluginRuntime {
-    host: Arc<RwLock<PluginHost>>,           // v2 loader
-    manager_v3: Arc<RwLock<PluginManagerV3>>, // v3 loader
+    manager_v3: Arc<RwLock<PluginManagerV3>>,
     config: RuntimeConfig,
 }
 
@@ -73,25 +73,9 @@ impl PluginRuntime {
         std::fs::create_dir_all(&config.plugins_dir)?;
         std::fs::create_dir_all(&config.cache_dir)?;
 
-        let plugin_config = PluginConfig {
-            plugins_dir: config.plugins_dir.clone(),
-            cache_dir: config.cache_dir.clone(),
-            registry_url: Some(
-                config
-                    .registry_url
-                    .clone()
-                    .unwrap_or_else(|| "https://adi-plugin-registry.the-ihor.com".to_string()),
-            ),
-            require_signatures: config.require_signatures,
-            trusted_keys: Vec::new(),
-            host_version: config.host_version.clone(),
-        };
-
-        let host = PluginHost::new(plugin_config)?;
         let manager_v3 = PluginManagerV3::new();
 
         Ok(Self {
-            host: Arc::new(RwLock::new(host)),
             manager_v3: Arc::new(RwLock::new(manager_v3)),
             config,
         })
@@ -107,20 +91,25 @@ impl PluginRuntime {
         &self.config
     }
 
-    /// Get the service registry.
-    pub fn service_registry(&self) -> Arc<ServiceRegistry> {
-        self.host.read().unwrap().service_registry().clone()
-    }
-
     /// Scan and load all installed plugins.
     pub async fn load_all_plugins(&self) -> Result<()> {
-        // Scan for v2 plugins
-        let mut host = self.host.write().unwrap();
-        host.scan_installed()?;
+        // Scan plugins directory for installed plugins
+        let plugins_dir = &self.config.plugins_dir;
+        if !plugins_dir.exists() {
+            return Ok(());
+        }
 
-        // Enable all discovered v2 plugins
-        let plugin_ids: Vec<String> = host.plugins().map(|p| p.id().to_string()).collect();
-        drop(host); // Release lock before async operations
+        let mut plugin_ids = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(plugins_dir) {
+            for entry in entries.flatten() {
+                let plugin_dir = entry.path();
+                if plugin_dir.is_dir() {
+                    if let Some(name) = plugin_dir.file_name() {
+                        plugin_ids.push(name.to_string_lossy().to_string());
+                    }
+                }
+            }
+        }
 
         for plugin_id in plugin_ids {
             if let Err(e) = self.load_plugin_internal(&plugin_id).await {
@@ -131,21 +120,13 @@ impl PluginRuntime {
         Ok(())
     }
 
-    /// Internal method to load a plugin by detecting its version
+    /// Internal method to load a plugin
     async fn load_plugin_internal(&self, plugin_id: &str) -> Result<()> {
         // Find the plugin manifest
         let manifest = self.find_plugin_manifest(plugin_id)?;
 
-        // Check API version
-        match manifest.compatibility.api_version {
-            3 => self.load_v3_plugin(&manifest).await?,
-            _ => {
-                // v2 or v1 - use old loader
-                self.host.write().unwrap().enable(plugin_id)?;
-            }
-        }
-
-        Ok(())
+        // All plugins use v3 ABI
+        self.load_v3_plugin(&manifest).await
     }
 
     /// Load a v3 plugin
@@ -214,168 +195,82 @@ impl PluginRuntime {
     /// Scan installed plugins and load a specific plugin by ID.
     /// This is useful when you only want to load one plugin without loading all.
     pub async fn scan_and_load_plugin(&self, plugin_id: &str) -> Result<()> {
-        // Scan both v2 and v3 plugins
-        self.host.write().unwrap().scan_installed()?;
-
-        // Load the specific plugin (auto-detects version)
+        // Load the specific plugin
         self.load_plugin_internal(plugin_id).await
-    }
-
-    /// Unload a plugin.
-    pub fn unload_plugin(&self, plugin_id: &str) -> Result<()> {
-        self.host.write().unwrap().disable(plugin_id)?;
-        Ok(())
     }
 
     /// List installed plugins.
     pub fn list_installed(&self) -> Vec<String> {
-        self.host
+        self.manager_v3
             .read()
             .unwrap()
-            .plugins()
-            .map(|p| p.id().to_string())
-            .collect()
-    }
-
-    /// List all registered services.
-    pub fn list_services(&self) -> Vec<ServiceDescriptor> {
-        self.service_registry().list()
-    }
-
-    /// Check if a service is available.
-    pub fn has_service(&self, service_id: &str) -> bool {
-        self.service_registry().has_service(service_id)
-    }
-
-    /// List plugins that provide HTTP routes.
-    pub fn list_http_providers(&self) -> Vec<String> {
-        self.service_registry()
-            .list()
-            .iter()
-            .filter(|s| s.id.as_str() == SERVICE_HTTP_ROUTES)
-            .map(|s| s.provider_id.as_str().to_string())
-            .collect()
-    }
-
-    /// List plugins that provide CLI commands (legacy SERVICE_CLI_COMMANDS).
-    pub fn list_cli_providers(&self) -> Vec<String> {
-        self.service_registry()
-            .list()
-            .iter()
-            .filter(|s| s.id.as_str() == SERVICE_CLI_COMMANDS)
-            .map(|s| s.provider_id.as_str().to_string())
+            .list_plugins()
+            .into_iter()
+            .map(|p| p.id)
             .collect()
     }
 
     /// List plugins with runnable CLI interfaces.
-    /// Returns (plugin_id, description) for each plugin with a `.cli` service.
+    /// Returns (plugin_id, description) for each plugin with CLI commands.
     pub fn list_runnable_plugins(&self) -> Vec<(String, String)> {
-        self.service_registry()
-            .list()
-            .iter()
-            .filter(|s| s.id.as_str().ends_with(".cli"))
-            .map(|s| {
-                // Extract plugin_id from service_id (e.g., "adi.tasks.cli" -> "adi.tasks")
-                let service_id = s.id.as_str();
-                let plugin_id = service_id.strip_suffix(".cli").unwrap_or(service_id);
-                (plugin_id.to_string(), s.description.as_str().to_string())
+        self.manager_v3
+            .read()
+            .unwrap()
+            .all_cli_commands()
+            .into_iter()
+            .map(|(id, _)| {
+                // Get description from plugin metadata if available
+                let description = self
+                    .manager_v3
+                    .read()
+                    .unwrap()
+                    .get_plugin(&id)
+                    .and_then(|p| p.metadata().description)
+                    .unwrap_or_default();
+                (id, description)
             })
             .collect()
     }
 
-    /// Handle an HTTP request. Returns JSON response.
-    pub fn handle_http_request(&self, handler_id: &str, request_json: &str) -> Result<String> {
-        let registry = self.service_registry();
-        let handle = registry.lookup(SERVICE_HTTP_ROUTES).ok_or_else(|| {
-            crate::error::InstallerError::PluginNotFound {
-                id: SERVICE_HTTP_ROUTES.to_string(),
-            }
-        })?;
-
-        let result = unsafe {
-            handle.invoke(
-                "handle_request",
-                &format!(
-                    r#"{{"handler_id":"{}","request":{}}}"#,
-                    handler_id, request_json
-                ),
-            )?
-        };
-        Ok(result)
-    }
-
-    /// List HTTP routes. Returns JSON array of routes.
-    pub fn list_http_routes(&self) -> Result<String> {
-        let registry = self.service_registry();
-        let handle = registry.lookup(SERVICE_HTTP_ROUTES).ok_or_else(|| {
-            crate::error::InstallerError::PluginNotFound {
-                id: SERVICE_HTTP_ROUTES.to_string(),
-            }
-        })?;
-
-        let result = unsafe { handle.invoke("list_routes", "{}")? };
-        Ok(result)
-    }
-
     /// Run a CLI command for a specific plugin. Returns result string.
     pub async fn run_cli_command(&self, plugin_id: &str, context_json: &str) -> Result<String> {
-        // First, check if it's a v3 plugin
-        {
-            let manager = self.manager_v3.read().unwrap();
-            if let Some(plugin) = manager.get_cli_commands(plugin_id) {
-                // It's a v3 plugin - parse context and call async method
-                let ctx = self.parse_cli_context(context_json)?;
-                let result = plugin
-                    .run_command(&ctx)
-                    .await
-                    .map_err(|e| crate::error::InstallerError::Other(e.to_string()))?;
-
-                // Format result as JSON for compatibility
-                return Ok(serde_json::to_string(&serde_json::json!({
-                    "exit_code": result.exit_code,
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                }))
-                .unwrap());
-            }
-        }
-
-        // Fall back to v2 plugin (JSON-RPC)
-        let service_id = format!("{}.cli", plugin_id);
-        let registry = self.service_registry();
-        let handle = registry
-            .lookup(&service_id)
+        let manager = self.manager_v3.read().unwrap();
+        let plugin = manager
+            .get_cli_commands(plugin_id)
             .ok_or_else(|| crate::error::InstallerError::PluginNotFound {
-                id: service_id.clone(),
+                id: plugin_id.to_string(),
             })?;
 
-        let result = unsafe { handle.invoke("run_command", context_json)? };
-        Ok(result)
+        // Parse context and call async method
+        let ctx = self.parse_cli_context(context_json)?;
+        drop(manager); // Release lock before async call
+
+        let result = plugin
+            .run_command(&ctx)
+            .await
+            .map_err(|e| crate::error::InstallerError::Other(e.to_string()))?;
+
+        // Format result as JSON for compatibility
+        Ok(serde_json::to_string(&serde_json::json!({
+            "exit_code": result.exit_code,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }))
+        .unwrap())
     }
 
     /// List CLI commands for a specific plugin. Returns JSON array of commands.
     pub async fn list_cli_commands(&self, plugin_id: &str) -> Result<String> {
-        // First, check if it's a v3 plugin
-        {
-            let manager = self.manager_v3.read().unwrap();
-            if let Some(plugin) = manager.get_cli_commands(plugin_id) {
-                // It's a v3 plugin - call async method
-                let commands = plugin.list_commands().await;
-                return Ok(serde_json::to_string(&commands).unwrap());
-            }
-        }
-
-        // Fall back to v2 plugin (JSON-RPC)
-        let service_id = format!("{}.cli", plugin_id);
-        let registry = self.service_registry();
-        let handle = registry
-            .lookup(&service_id)
+        let manager = self.manager_v3.read().unwrap();
+        let plugin = manager
+            .get_cli_commands(plugin_id)
             .ok_or_else(|| crate::error::InstallerError::PluginNotFound {
-                id: service_id.clone(),
+                id: plugin_id.to_string(),
             })?;
+        drop(manager); // Release lock before async call
 
-        let result = unsafe { handle.invoke("list_commands", "{}")? };
-        Ok(result)
+        let commands = plugin.list_commands().await;
+        Ok(serde_json::to_string(&commands).unwrap())
     }
 
     /// Parse JSON context into CliContext for v3 plugins
@@ -530,7 +425,6 @@ impl PluginRuntime {
 impl Clone for PluginRuntime {
     fn clone(&self) -> Self {
         Self {
-            host: Arc::clone(&self.host),
             manager_v3: Arc::clone(&self.manager_v3),
             config: self.config.clone(),
         }

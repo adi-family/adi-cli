@@ -57,6 +57,7 @@ impl Plugin for RussianPlugin {
             plugin_type: PluginType::Extension,
             author: Some("ADI Team".to_string()),
             description: Some("Russian translations for ADI CLI".to_string()),
+            category: None,
         }
     }
 
