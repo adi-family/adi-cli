@@ -630,6 +630,36 @@ async fn cmd_services() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Handle CLI result from plugin execution.
+/// Parses the JSON result and outputs stdout/stderr appropriately,
+/// then exits with the correct exit code.
+fn handle_cli_result(result_json: &str) {
+    #[derive(serde::Deserialize)]
+    struct CliResult {
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+    }
+
+    match serde_json::from_str::<CliResult>(result_json) {
+        Ok(result) => {
+            if !result.stdout.is_empty() {
+                print!("{}", result.stdout);
+            }
+            if !result.stderr.is_empty() {
+                eprint!("{}", result.stderr);
+            }
+            if result.exit_code != 0 {
+                std::process::exit(result.exit_code);
+            }
+        }
+        Err(_) => {
+            // Fallback: if JSON parsing fails, print raw result
+            println!("{}", result_json);
+        }
+    }
+}
+
 async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result<()> {
     let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
     runtime.load_all_plugins().await?;
@@ -691,7 +721,7 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
 
     match runtime.run_cli_command(&plugin_id, &context.to_string()).await {
         Ok(result) => {
-            println!("{}", result);
+            handle_cli_result(&result);
             Ok(())
         }
         Err(e) => {
@@ -780,7 +810,7 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
 
     match runtime.run_cli_command(&plugin_id, &context.to_string()).await {
         Ok(result) => {
-            println!("{}", result);
+            handle_cli_result(&result);
             Ok(())
         }
         Err(e) => {
