@@ -13,3 +13,23 @@ lib-plugin-abi-v3 = { path = "../../../lib/lib-plugin-abi-v3" }
 serde = { version = "1.0", features = ["derive"] }
 async-trait = "0.1"
 serde_json = "1.0"
+
+[package.metadata.plugin]
+id = "adi.cli.ko-KR"
+name = "ADI CLI - 한국어"
+type = "translation"
+
+[package.metadata.plugin.compatibility]
+api_version = 3
+min_host_version = "3.0.0"
+
+[[package.metadata.plugin.provides]]
+id = "adi.i18n.cli.ko-KR"
+version = "3.0.0"
+description = "Korean translations for CLI"
+
+[package.metadata.plugin.translation]
+translates = "adi.cli"
+language = "ko-KR"
+language_name = "한국어"
+namespace = "cli"
