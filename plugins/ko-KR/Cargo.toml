@@ -1,5 +1,5 @@
 [package]
-name = "adi-cli-lang-ko-KR"
+name = "cli-lang-ko-KR"
 version = "3.0.0"
 edition = "2021"
 license = "BSL-1.0"

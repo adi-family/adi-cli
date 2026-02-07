@@ -1,7 +1,7 @@
-use adi_cli::completions::{self, CompletionShell};
-use adi_cli::plugin_registry::PluginManager;
-use adi_cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
-use adi_cli::user_config::UserConfig;
+use cli::completions::{self, CompletionShell};
+use cli::plugin_registry::PluginManager;
+use cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
+use cli::user_config::UserConfig;
 use clap::{Parser, Subcommand};
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
@@ -150,7 +150,7 @@ async fn main() -> anyhow::Result<()> {
     initialize_i18n(cli.lang.as_deref()).await?;
 
     match cli.command {
-        Commands::SelfUpdate { force } => adi_cli::self_update::self_update(force).await?,
+        Commands::SelfUpdate { force } => cli::self_update::self_update(force).await?,
         Commands::Start { port } => cmd_start(port).await?,
         Commands::Plugin { command } => cmd_plugin(command).await?,
         Commands::Search { query } => cmd_search(&query).await?,
@@ -845,7 +845,7 @@ enum AutoinstallResult {
 /// that provide the `adi <command>` interface use `adi.cli.{name}` pattern.
 async fn try_autoinstall_plugin(
     command: &str,
-    cli_commands: &[adi_cli::plugin_runtime::PluginCliCommand],
+    cli_commands: &[cli::plugin_runtime::PluginCliCommand],
 ) -> AutoinstallResult {
     use std::io::{self, Write};
 
