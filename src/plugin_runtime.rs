@@ -309,11 +309,32 @@ impl PluginRuntime {
         // Extract subcommand (first arg if present)
         let subcommand = args.first().cloned();
 
-        // Build options map from remaining args
+        // Build options map: first from explicit "options" field, then parse --flags from args
         let mut options = HashMap::new();
         if let Some(opts) = value.get("options").and_then(|v| v.as_object()) {
             for (k, v) in opts {
                 options.insert(k.clone(), v.clone());
+            }
+        }
+
+        // Parse --flags and --key value from args (skip subcommand at index 0)
+        let remaining_args: Vec<String> = args.into_iter().skip(1).collect();
+        let mut positional_args = Vec::new();
+        let mut i = 0;
+        while i < remaining_args.len() {
+            let arg = &remaining_args[i];
+            if let Some(key) = arg.strip_prefix("--") {
+                // Check if next arg is a value (not another flag)
+                if i + 1 < remaining_args.len() && !remaining_args[i + 1].starts_with("--") {
+                    options.insert(key.to_string(), serde_json::Value::String(remaining_args[i + 1].clone()));
+                    i += 2;
+                } else {
+                    options.insert(key.to_string(), serde_json::Value::Bool(true));
+                    i += 1;
+                }
+            } else {
+                positional_args.push(arg.clone());
+                i += 1;
             }
         }
 
@@ -323,7 +344,7 @@ impl PluginRuntime {
         Ok(CliContext {
             command,
             subcommand,
-            args: args.into_iter().skip(1).collect(), // Skip subcommand from args
+            args: positional_args,
             options,
             cwd,
             env,
