@@ -8,6 +8,8 @@ use std::path::PathBuf;
 pub struct UserConfig {
     /// Preferred language (e.g., "en-US", "zh-CN", "uk-UA")
     pub language: Option<String>,
+    /// Preferred theme (e.g., "indigo", "scarlet", "emerald")
+    pub theme: Option<String>,
 }
 
 impl UserConfig {

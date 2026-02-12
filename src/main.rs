@@ -149,6 +149,9 @@ async fn main() -> anyhow::Result<()> {
     // Initialize i18n system
     initialize_i18n(cli.lang.as_deref()).await?;
 
+    // Initialize theme: ADI_THEME env var > config file > default
+    initialize_theme();
+
     match cli.command {
         Commands::SelfUpdate { force } => cli::self_update::self_update(force).await?,
         Commands::Start { port } => cmd_start(port).await?,
@@ -206,6 +209,17 @@ fn cmd_init(shell: Option<CompletionShell>) -> anyhow::Result<()> {
 }
 
 
+
+/// Initialize the ADI theme from env var or user config.
+///
+/// Priority: ADI_THEME env var > config file theme > default ("indigo").
+fn initialize_theme() {
+    let theme_id = std::env::var("ADI_THEME")
+        .ok()
+        .or_else(|| UserConfig::load().ok().and_then(|c| c.theme))
+        .unwrap_or_else(|| lib_console_output::theme::generated::DEFAULT_THEME.to_string());
+    lib_console_output::theme::init(&theme_id);
+}
 
 /// Available languages with display names
 const AVAILABLE_LANGUAGES: &[(&str, &str)] = &[
