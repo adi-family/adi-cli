@@ -4,15 +4,17 @@ version = "3.0.0"
 edition = "2021"
 license = "BSL-1.0"
 description = "English translations for ADI CLI (v3)"
+build = "../build.rs"
 
 [lib]
 crate-type = ["cdylib"]
+path = "../translation.rs"
 
 [dependencies]
 lib-plugin-abi-v3 = { path = "../../../lib/lib-plugin-abi-v3" }
-async-trait = "0.1"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+
+[build-dependencies]
+toml = "0.8"
 
 [package.metadata.plugin]
 id = "adi.cli.en-US"

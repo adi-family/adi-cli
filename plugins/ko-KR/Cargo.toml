@@ -3,16 +3,18 @@ name = "cli-lang-ko-KR"
 version = "3.0.0"
 edition = "2021"
 license = "BSL-1.0"
-description = "Translations for ko-KR for ADI CLI (v3)"
+description = "Korean translations for ADI CLI (v3)"
+build = "../build.rs"
 
 [lib]
 crate-type = ["cdylib"]
+path = "../translation.rs"
 
 [dependencies]
 lib-plugin-abi-v3 = { path = "../../../lib/lib-plugin-abi-v3" }
-serde = { version = "1.0", features = ["derive"] }
-async-trait = "0.1"
-serde_json = "1.0"
+
+[build-dependencies]
+toml = "0.8"
 
 [package.metadata.plugin]
 id = "adi.cli.ko-KR"
