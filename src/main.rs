@@ -4,7 +4,7 @@ use cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
 use cli::user_config::UserConfig;
 use clap::{Parser, Subcommand};
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
-use lib_console_output::theme;
+use lib_console_output::{theme, blocks::{Columns, List, Section, Renderable}, out_info, out_warn, out_error, out_success};
 use lib_i18n_core::{init_global, t, I18n, LocalizedError};
 use std::sync::Arc;
 
@@ -205,33 +205,17 @@ fn cmd_init(shell: Option<CompletionShell>) -> anyhow::Result<()> {
         .or_else(completions::detect_shell)
         .ok_or_else(|| anyhow::anyhow!(t!("completions-error-no-shell")))?;
 
-    println!(
-        "{}",
-        t!("completions-init-start", "shell" => &format!("{:?}", shell))
-    );
+    out_info!("{}", t!("completions-init-start", "shell" => &format!("{:?}", shell)));
 
     let path = completions::init_completions::<Cli>(shell, "adi")?;
 
-    println!();
-    println!(
-        "{}",
-        t!("completions-init-done", "path" => &path.display().to_string())
-    );
-    println!();
+    out_success!("{}", t!("completions-init-done", "path" => &path.display().to_string()));
 
     match shell {
-        CompletionShell::Zsh => {
-            println!("{}", t!("completions-restart-zsh"));
-        }
-        CompletionShell::Bash => {
-            println!("{}", t!("completions-restart-bash"));
-        }
-        CompletionShell::Fish => {
-            println!("{}", t!("completions-restart-fish"));
-        }
-        _ => {
-            println!("{}", t!("completions-restart-generic"));
-        }
+        CompletionShell::Zsh => out_info!("{}", t!("completions-restart-zsh")),
+        CompletionShell::Bash => out_info!("{}", t!("completions-restart-bash")),
+        CompletionShell::Fish => out_info!("{}", t!("completions-restart-fish")),
+        _ => out_info!("{}", t!("completions-restart-generic")),
     }
 
     Ok(())
@@ -263,11 +247,8 @@ const AVAILABLE_LANGUAGES: &[(&str, &str)] = &[
 
 /// Prompt user to select their preferred language interactively
 fn prompt_language_selection() -> anyhow::Result<String> {
-    println!();
-    println!("{}", theme::brand_bold("Welcome to ADI! 🎉"));
-    println!();
-    println!("Please select your preferred language:");
-    println!();
+    out_info!("{}", theme::brand_bold("Welcome to ADI! 🎉"));
+    out_info!("Please select your preferred language:");
 
     let items: Vec<String> = AVAILABLE_LANGUAGES
         .iter()
@@ -313,13 +294,8 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
         config.language = Some(selected_lang.clone());
         config.save()?;
 
-        println!();
-        println!(
-            "{}",
-            theme::success(format!("Language set to: {}", selected_lang))
-        );
-        println!("{}", theme::muted("You can change this later by setting ADI_LANG environment variable or using --lang flag"));
-        println!();
+        out_success!("Language set to: {}", selected_lang);
+        out_info!("{}", theme::muted("You can change this later by setting ADI_LANG environment variable or using --lang flag"));
 
         selected_lang
     } else {
@@ -369,13 +345,7 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
 
         // If not found, try to install from registry
         if !ftl_loaded {
-            println!(
-                "{}",
-                theme::muted(format!(
-                    "Installing {} translation plugin...",
-                    effective_lang
-                ))
-            );
+            out_info!("{}", theme::muted(format!("Installing {} translation plugin...", effective_lang)));
 
             let manager = PluginManager::new();
             if manager.install_plugin(&translation_id, None).await.is_ok() {
@@ -386,13 +356,7 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
                     }
                 }
             } else {
-                eprintln!(
-                    "{}",
-                    theme::warning(format!(
-                        "Warning: Translation plugin {} not available, using English",
-                        translation_id
-                    ))
-                );
+                out_warn!("Translation plugin {} not available, using English", translation_id);
             }
         }
     }
@@ -450,49 +414,51 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             cmd_search(&query).await?;
         }
         PluginCommands::List => {
-            println!("{}", theme::bold(t!("plugin-list-title")));
-            println!();
+            Section::new(t!("plugin-list-title")).print();
 
             let plugins = manager.list_plugins().await?;
 
             if plugins.is_empty() {
-                println!("  {}", t!("plugin-list-empty"));
+                out_info!("{}", t!("plugin-list-empty"));
                 return Ok(());
             }
 
-            for plugin in plugins {
-                println!(
-                    "  {} {} - {} [{}]",
-                    theme::brand_bold(&plugin.id),
-                    theme::muted(format!("v{}", plugin.latest_version)),
-                    plugin.description,
-                    theme::warning(&plugin.plugin_type)
-                );
+            let mut cols = Columns::new()
+                .header(["Plugin", "Version", "Description", "Type"]);
+            for plugin in &plugins {
+                cols = cols.row([
+                    theme::brand_bold(&plugin.id).to_string(),
+                    theme::muted(format!("v{}", plugin.latest_version)).to_string(),
+                    plugin.description.clone(),
+                    theme::warning(&plugin.plugin_type).to_string(),
+                ]);
+            }
+            cols.print();
+
+            for plugin in &plugins {
                 if !plugin.tags.is_empty() {
-                    println!("    Tags: {}", theme::muted(plugin.tags.join(", ")));
+                    out_info!("{}: Tags: {}", theme::brand(&plugin.id), theme::muted(plugin.tags.join(", ")));
                 }
             }
         }
         PluginCommands::Installed => {
-            println!("{}", theme::bold(t!("plugin-installed-title")));
-            println!();
+            Section::new(t!("plugin-installed-title")).print();
 
             let installed = manager.list_installed().await?;
 
             if installed.is_empty() {
-                println!("  {}", t!("plugin-installed-empty"));
-                println!();
-                println!("  {}", t!("plugin-installed-hint"));
+                out_info!("{}", t!("plugin-installed-empty"));
+                out_info!("{}", t!("plugin-installed-hint"));
                 return Ok(());
             }
 
-            for (id, version) in installed {
-                println!(
-                    "  {} {}",
-                    theme::brand_bold(&id),
-                    theme::muted(format!("v{}", version)),
-                );
-            }
+            let cols = Columns::new()
+                .header(["Plugin", "Version"])
+                .rows(installed.iter().map(|(id, version)| [
+                    theme::brand_bold(id).to_string(),
+                    theme::muted(format!("v{}", version)).to_string(),
+                ]));
+            cols.print();
         }
         PluginCommands::Install { plugin_id, version } => {
             manager
@@ -508,26 +474,19 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             let installed = manager.list_installed().await?;
 
             if installed.is_empty() {
-                println!("{}", t!("plugin-list-empty"));
+                out_info!("{}", t!("plugin-list-empty"));
                 return Ok(());
             }
 
-            println!(
-                "{}",
-                t!("plugin-update-all-start", "count" => &installed.len().to_string())
-            );
+            out_info!("{}", t!("plugin-update-all-start", "count" => &installed.len().to_string()));
 
             for (id, _) in installed {
                 if let Err(e) = manager.update_plugin(&id).await {
-                    let prefix = t!("common-warning-prefix");
-                    let msg =
-                        t!("plugin-update-all-warning", "id" => &id, "error" => &e.localized());
-                    eprintln!("{} {}", theme::warning(prefix), msg);
+                    out_warn!("{}", t!("plugin-update-all-warning", "id" => &id, "error" => &e.localized()));
                 }
             }
 
-            println!();
-            println!("{}", theme::success(t!("plugin-update-all-done")));
+            out_success!("{}", t!("plugin-update-all-done"));
             regenerate_completions_quiet();
         }
         PluginCommands::Uninstall { plugin_id } => {
@@ -537,7 +496,7 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
                 .interact()?;
 
             if !confirmed {
-                println!("{}", t!("plugin-uninstall-cancelled"));
+                out_info!("{}", t!("plugin-uninstall-cancelled"));
                 return Ok(());
             }
 
@@ -549,11 +508,7 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             let version_file = plugin_dir.join(".version");
 
             if !version_file.exists() {
-                eprintln!(
-                    "{} Plugin {} is not installed",
-                    theme::error("Error:"),
-                    theme::brand(&plugin_id)
-                );
+                out_error!("Plugin {} is not installed", theme::brand(&plugin_id));
                 std::process::exit(1);
             }
 
@@ -572,13 +527,8 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
 /// Regenerate shell completions silently (called after plugin changes).
 fn regenerate_completions_quiet() {
     if let Err(e) = completions::regenerate_completions::<Cli>("adi") {
-        // Only warn in debug builds, silently ignore in release
         #[cfg(debug_assertions)]
-        eprintln!(
-            "{} Failed to regenerate completions: {}",
-            theme::warning("Warning:"),
-            e
-        );
+        out_warn!("Failed to regenerate completions: {}", e);
         let _ = e;
     }
 }
@@ -586,56 +536,56 @@ fn regenerate_completions_quiet() {
 async fn cmd_search(query: &str) -> anyhow::Result<()> {
     let manager = PluginManager::new();
 
-    println!("{}", t!("search-searching", "query" => query));
-    println!();
+    out_info!("{}", t!("search-searching", "query" => query));
 
     let results = manager.search(query).await?;
 
     if results.packages.is_empty() && results.plugins.is_empty() {
-        println!("  {}", t!("search-no-results"));
+        out_info!("{}", t!("search-no-results"));
         return Ok(());
     }
 
     if !results.packages.is_empty() {
-        println!("{}", theme::bold(t!("search-packages-title")));
+        Section::new(t!("search-packages-title")).print();
+        let cols = Columns::new()
+            .header(["Package", "Version", "Description"])
+            .rows(results.packages.iter().map(|pkg| [
+                theme::brand_bold(&pkg.id).to_string(),
+                theme::muted(format!("v{}", pkg.latest_version)).to_string(),
+                pkg.description.clone(),
+            ]));
+        cols.print();
+
         for pkg in &results.packages {
-            println!(
-                "  {} {} - {}",
-                theme::brand_bold(&pkg.id),
-                theme::muted(format!("v{}", pkg.latest_version)),
-                pkg.description
-            );
             if !pkg.tags.is_empty() {
-                println!("    Tags: {}", theme::muted(pkg.tags.join(", ")));
+                out_info!("{}: Tags: {}", theme::brand(&pkg.id), theme::muted(pkg.tags.join(", ")));
             }
         }
-        println!();
     }
 
     if !results.plugins.is_empty() {
-        println!("{}", theme::bold(t!("search-plugins-title")));
+        Section::new(t!("search-plugins-title")).print();
+        let cols = Columns::new()
+            .header(["Plugin", "Version", "Description", "Type"])
+            .rows(results.plugins.iter().map(|plugin| [
+                theme::brand_bold(&plugin.id).to_string(),
+                theme::muted(format!("v{}", plugin.latest_version)).to_string(),
+                plugin.description.clone(),
+                theme::warning(&plugin.plugin_type).to_string(),
+            ]));
+        cols.print();
+
         for plugin in &results.plugins {
-            println!(
-                "  {} {} - {} [{}]",
-                theme::brand_bold(&plugin.id),
-                theme::muted(format!("v{}", plugin.latest_version)),
-                plugin.description,
-                theme::warning(&plugin.plugin_type)
-            );
             if !plugin.tags.is_empty() {
-                println!("    Tags: {}", theme::muted(plugin.tags.join(", ")));
+                out_info!("{}: Tags: {}", theme::brand(&plugin.id), theme::muted(plugin.tags.join(", ")));
             }
         }
     }
 
-    println!();
-    println!(
-        "{}",
-        t!("search-results-summary",
-            "packages" => &results.packages.len().to_string(),
-            "plugins" => &results.plugins.len().to_string()
-        )
-    );
+    out_info!("{}", t!("search-results-summary",
+        "packages" => &results.packages.len().to_string(),
+        "plugins" => &results.plugins.len().to_string()
+    ));
 
     Ok(())
 }
@@ -654,18 +604,16 @@ async fn cmd_services() -> anyhow::Result<()> {
     let plugins = runtime.list_installed();
 
     if plugins.is_empty() {
-        println!("{}", t!("services-empty"));
-        println!();
-        println!("{}", t!("services-hint"));
+        out_info!("{}", t!("services-empty"));
+        out_info!("{}", t!("services-hint"));
         return Ok(());
     }
 
-    println!("{}", theme::bold(t!("services-title")));
-    println!();
+    Section::new(t!("services-title")).print();
 
-    for plugin_id in plugins {
-        println!("  {}", theme::brand_bold(&plugin_id));
-    }
+    List::new()
+        .items(plugins.iter().map(|id| theme::brand_bold(id).to_string()))
+        .print();
 
     Ok(())
 }
@@ -711,23 +659,20 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
     let plugin_id = match plugin_id {
         Some(id) => id,
         None => {
-            println!("{}", theme::bold(t!("run-title")));
-            println!();
+            Section::new(t!("run-title")).print();
 
             if runnable.is_empty() {
-                println!("  {}", t!("run-empty"));
-                println!();
-                println!("  {}", t!("run-hint-install"));
+                out_info!("{}", t!("run-empty"));
+                out_info!("{}", t!("run-hint-install"));
             } else {
-                for (id, description) in &runnable {
-                    println!(
-                        "  {} - {}",
-                        theme::brand_bold(id),
-                        theme::muted(description)
-                    );
-                }
-                println!();
-                println!("{}", t!("run-hint-usage"));
+                Columns::new()
+                    .header(["Plugin", "Description"])
+                    .rows(runnable.iter().map(|(id, desc)| [
+                        theme::brand_bold(id).to_string(),
+                        theme::muted(desc).to_string(),
+                    ]))
+                    .print();
+                out_info!("{}", t!("run-hint-usage"));
             }
             return Ok(());
         }
@@ -735,18 +680,13 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
 
     // Check if plugin has CLI service
     if !runnable.iter().any(|(id, _)| id == &plugin_id) {
-        {
-            let prefix = t!("common-error-prefix");
-            let msg = t!("run-error-not-found", "id" => &plugin_id);
-            eprintln!("{} {}", theme::error(prefix), msg);
-        }
-        eprintln!();
+        out_error!("{} {}", t!("common-error-prefix"), t!("run-error-not-found", "id" => &plugin_id));
         if runnable.is_empty() {
-            eprintln!("{}", t!("run-error-no-plugins"));
+            out_error!("{}", t!("run-error-no-plugins"));
         } else {
-            eprintln!("{}", t!("run-error-available"));
+            out_info!("{}", t!("run-error-available"));
             for (id, _) in &runnable {
-                eprintln!("  - {}", id);
+                out_info!("  - {}", id);
             }
         }
         std::process::exit(1);
@@ -765,11 +705,7 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
             Ok(())
         }
         Err(e) => {
-            {
-                let prefix = t!("common-error-prefix");
-                let msg = t!("run-error-failed", "error" => &e.localized());
-                eprintln!("{} {}", theme::error(prefix), msg);
-            }
+            out_error!("{} {}", t!("common-error-prefix"), t!("run-error-failed", "error" => &e.localized()));
             std::process::exit(1);
         }
     }
@@ -789,12 +725,7 @@ async fn cmd_logs(
 
     // Load the target plugin
     if let Err(e) = runtime.scan_and_load_plugin(plugin_id).await {
-        eprintln!(
-            "{} Failed to load plugin {}: {}",
-            theme::error("Error:"),
-            plugin_id,
-            e
-        );
+        out_error!("Failed to load plugin {}: {}", plugin_id, e);
         std::process::exit(1);
     }
 
@@ -803,11 +734,7 @@ async fn cmd_logs(
     let log_provider = match log_provider {
         Some(p) => p,
         None => {
-            eprintln!(
-                "{} Plugin {} does not provide log streaming.",
-                theme::error("Error:"),
-                theme::brand(plugin_id)
-            );
+            out_error!("Plugin {} does not provide log streaming.", theme::brand(plugin_id));
             std::process::exit(1);
         }
     };
@@ -850,11 +777,7 @@ async fn cmd_logs(
 /// auto-install the plugin from the registry (following the `adi.{command}` pattern).
 async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
     if args.is_empty() {
-        {
-            let prefix = t!("common-error-prefix");
-            let msg = t!("external-error-no-command");
-            eprintln!("{} {}", theme::error(prefix), msg);
-        }
+        out_error!("{} {}", t!("common-error-prefix"), t!("external-error-no-command"));
         std::process::exit(1);
     }
 
@@ -896,14 +819,8 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
 
     // Now scan and load only the needed plugin
     if let Err(e) = runtime.scan_and_load_plugin(&plugin_id).await {
-        {
-            let prefix = t!("common-error-prefix");
-            let msg =
-                t!("external-error-load-failed", "id" => &plugin_id, "error" => &e.localized());
-            eprintln!("{} {}", theme::error(prefix), msg);
-        }
-        eprintln!();
-        eprintln!("{}", t!("external-hint-reinstall", "id" => &plugin_id));
+        out_error!("{} {}", t!("common-error-prefix"), t!("external-error-load-failed", "id" => &plugin_id, "error" => &e.localized()));
+        out_info!("{}", t!("external-hint-reinstall", "id" => &plugin_id));
         std::process::exit(1);
     }
 
@@ -920,11 +837,7 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
             Ok(())
         }
         Err(e) => {
-            {
-                let prefix = t!("common-error-prefix");
-                let msg = t!("external-error-run-failed", "command" => &command, "error" => &e.localized());
-                eprintln!("{} {}", theme::error(prefix), msg);
-            }
+            out_error!("{} {}", t!("common-error-prefix"), t!("external-error-run-failed", "command" => &command, "error" => &e.localized()));
             std::process::exit(1);
         }
     }
@@ -968,13 +881,10 @@ async fn try_autoinstall_plugin(
     match manager.get_plugin_info(&plugin_id).await {
         Ok(Some(_info)) => {
             // Plugin found in registry
-            println!(
-                "{}",
-                t!("external-autoinstall-found", "id" => &plugin_id, "command" => command)
-            );
+            out_info!("{}", t!("external-autoinstall-found", "id" => &plugin_id, "command" => command));
 
             if auto_install_disabled {
-                eprintln!("{}", t!("external-autoinstall-disabled", "id" => &plugin_id));
+                out_warn!("{}", t!("external-autoinstall-disabled", "id" => &plugin_id));
                 return AutoinstallResult::Declined;
             }
 
@@ -999,65 +909,45 @@ async fn try_autoinstall_plugin(
             };
 
             if !should_install {
-                eprintln!("{}", t!("external-autoinstall-disabled", "id" => &plugin_id));
+                out_warn!("{}", t!("external-autoinstall-disabled", "id" => &plugin_id));
                 return AutoinstallResult::Declined;
             }
 
             // Install the plugin
-            println!("{}", t!("external-autoinstall-installing", "id" => &plugin_id));
+            out_info!("{}", t!("external-autoinstall-installing", "id" => &plugin_id));
 
             match manager.install_with_dependencies(&plugin_id, None).await {
                 Ok(()) => {
-                    println!(
-                        "{} {}",
-                        theme::success(t!("common-success-prefix")),
-                        t!("external-autoinstall-success")
-                    );
-                    eprintln!(); // Blank line before command output
+                    out_success!("{} {}", t!("common-success-prefix"), t!("external-autoinstall-success"));
                     AutoinstallResult::Installed(plugin_id)
                 }
                 Err(e) => {
-                    eprintln!(
-                        "{} {}",
-                        theme::error(t!("common-error-prefix")),
-                        t!("external-autoinstall-failed", "error" => &e.localized())
-                    );
+                    out_error!("{} {}", t!("common-error-prefix"), t!("external-autoinstall-failed", "error" => &e.localized()));
                     AutoinstallResult::Failed
                 }
             }
         }
         Ok(None) | Err(_) => {
             // Plugin not found in registry - show standard error
-            {
-                let prefix = t!("common-error-prefix");
-                let msg = t!("external-error-unknown", "command" => command);
-                eprintln!("{} {}", theme::error(prefix), msg);
-            }
-            eprintln!();
-
-            // Show hint about registry plugin pattern
-            eprintln!("{}", t!("external-autoinstall-not-found", "command" => command));
-            eprintln!();
+            out_error!("{} {}", t!("common-error-prefix"), t!("external-error-unknown", "command" => command));
+            out_info!("{}", t!("external-autoinstall-not-found", "command" => command));
 
             if cli_commands.is_empty() {
-                eprintln!("{}", t!("external-error-no-installed"));
-                eprintln!();
-                eprintln!("{}", t!("external-hint-install"));
+                out_info!("{}", t!("external-error-no-installed"));
+                out_info!("{}", t!("external-hint-install"));
             } else {
-                eprintln!("{}", theme::bold(t!("external-available-title")));
-                for cmd in cli_commands {
-                    let aliases = if cmd.aliases.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" (aliases: {})", cmd.aliases.join(", "))
-                    };
-                    eprintln!(
-                        "  {} - {}{}",
-                        theme::brand_bold(&cmd.command),
-                        cmd.description,
-                        theme::muted(aliases)
-                    );
-                }
+                Section::new(t!("external-available-title")).print();
+                Columns::new()
+                    .header(["Command", "Description"])
+                    .rows(cli_commands.iter().map(|cmd| {
+                        let desc = if cmd.aliases.is_empty() {
+                            cmd.description.clone()
+                        } else {
+                            format!("{}{}", cmd.description, theme::muted(format!(" (aliases: {})", cmd.aliases.join(", "))))
+                        };
+                        [theme::brand_bold(&cmd.command).to_string(), desc]
+                    }))
+                    .print();
             }
 
             AutoinstallResult::NotFound
@@ -1077,10 +967,7 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
     use tower_http::cors::{Any, CorsLayer};
     use tokio::sync::RwLock;
 
-    println!(
-        "{}",
-        theme::brand_bold("Starting ADI local server...")
-    );
+    out_info!("{}", theme::brand_bold("Starting ADI local server..."));
 
     // Ensure cocoon plugin is installed
     let manager = PluginManager::new();
@@ -1088,15 +975,9 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
     let cocoon_installed = installed.iter().any(|(id, _)| id == "adi.cocoon");
 
     if !cocoon_installed {
-        println!(
-            "{}",
-            theme::muted("Installing cocoon plugin...")
-        );
+        out_info!("{}", theme::muted("Installing cocoon plugin..."));
         manager.install_plugin("adi.cocoon", None).await?;
-        println!(
-            "{}",
-            theme::success("Cocoon plugin installed!")
-        );
+        out_success!("Cocoon plugin installed!");
     }
 
     // Get machine name for display
@@ -1137,37 +1018,18 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
         .map(|c| c.name)
         .collect();
 
-    println!();
-    println!(
-        "  {} {}",
-        theme::muted("Name:"),
-        theme::bold(&hostname)
-    );
-    println!(
-        "  {} {}",
-        theme::muted("URL:"),
-        theme::brand(format!("http://localhost:{}", port))
-    );
+    let mut kv = lib_console_output::blocks::KeyValue::new()
+        .entry("Name", theme::bold(&hostname).to_string())
+        .entry("URL", theme::brand(format!("http://localhost:{}", port)).to_string());
     if !ai_agents.is_empty() {
-        println!(
-            "  {} {}",
-            theme::muted("Agents:"),
-            theme::success(ai_agents.join(", "))
-        );
+        kv = kv.entry("Agents", theme::success(ai_agents.join(", ")).to_string());
     }
     if !runtimes.is_empty() {
-        println!(
-            "  {} {}",
-            theme::muted("Runtimes:"),
-            theme::info(runtimes.join(", "))
-        );
+        kv = kv.entry("Runtimes", theme::info(runtimes.join(", ")).to_string());
     }
-    println!();
-    println!(
-        "{}",
-        theme::muted("Waiting for browser connection... (Ctrl+C to stop)")
-    );
-    println!();
+    kv.print();
+
+    out_info!("{}", theme::muted("Waiting for browser connection... (Ctrl+C to stop)"));
 
     // Start HTTP server in background
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -1177,10 +1039,7 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
 
     // Wait for connection request from browser
     if let Some(req) = connect_rx.recv().await {
-        println!(
-            "{}",
-            theme::success("Browser connected! Starting cocoon...")
-        );
+        out_success!("Browser connected! Starting cocoon...");
 
         // Set environment variables for the cocoon service installation
         std::env::set_var("SIGNALING_SERVER_URL", &req.signaling_url);
@@ -1200,25 +1059,12 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
 
         runtime.run_cli_command("adi.cocoon", &install_context.to_string()).await?;
 
-        println!(
-            "{}",
-            theme::success("Cocoon installed and running as a background service!")
-        );
-        println!(
-            "  {} {}",
-            theme::muted("Status:"),
-            theme::brand("adi cocoon status")
-        );
-        println!(
-            "  {} {}",
-            theme::muted("Logs:"),
-            theme::brand("adi cocoon logs")
-        );
-        println!(
-            "  {} {}",
-            theme::muted("Stop:"),
-            theme::brand("adi cocoon stop")
-        );
+        out_success!("Cocoon installed and running as a background service!");
+        lib_console_output::blocks::KeyValue::new()
+            .entry("Status", theme::brand("adi cocoon status").to_string())
+            .entry("Logs", theme::brand("adi cocoon logs").to_string())
+            .entry("Stop", theme::brand("adi cocoon stop").to_string())
+            .print();
     }
 
     // Abort the HTTP server task
