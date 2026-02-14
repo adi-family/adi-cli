@@ -233,24 +233,86 @@ fn initialize_theme() {
     lib_console_output::theme::init(&theme_id);
 }
 
-/// Available languages with display names
-const AVAILABLE_LANGUAGES: &[(&str, &str)] = &[
-    ("en-US", "English"),
-    ("zh-CN", "中文 (简体)"),
-    ("uk-UA", "Українська"),
-    ("es-ES", "Español"),
-    ("fr-FR", "Français"),
-    ("de-DE", "Deutsch"),
-    ("ja-JP", "日本語"),
-    ("ko-KR", "한국어"),
-];
+/// Discover available translation languages from the plugin registry.
+///
+/// Falls back to scanning installed plugins, then to just en-US (built-in).
+async fn get_available_languages() -> Vec<(String, String)> {
+    let mut languages = vec![("en-US".to_string(), "English".to_string())];
 
-/// Prompt user to select their preferred language interactively
-fn prompt_language_selection() -> anyhow::Result<String> {
+    // Try fetching translation plugins from the registry
+    let manager = PluginManager::new();
+    if let Ok(plugins) = manager.list_plugins().await {
+        for plugin in plugins {
+            if plugin.plugin_type == "translation" {
+                if let Some(lang_code) = plugin.id.strip_prefix("adi.cli.") {
+                    if lang_code != "en-US" {
+                        let display_name = plugin
+                            .name
+                            .strip_prefix("ADI CLI - ")
+                            .unwrap_or(&plugin.name)
+                            .to_string();
+                        languages.push((lang_code.to_string(), display_name));
+                    }
+                }
+            }
+        }
+        return languages;
+    }
+
+    // Registry unreachable — scan installed plugins for translation metadata
+    let plugins_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("adi")
+        .join("plugins");
+
+    if let Ok(mut entries) = tokio::fs::read_dir(&plugins_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Some(lang_code) = name.strip_prefix("adi.cli.") {
+                if lang_code == "en-US" {
+                    continue;
+                }
+                let version_file = entry.path().join(".version");
+                let display_name = tokio::fs::read_to_string(&version_file)
+                    .await
+                    .ok()
+                    .and_then(|version| {
+                        let manifest = entry.path().join(version.trim()).join("plugin.toml");
+                        std::fs::read_to_string(&manifest).ok()
+                    })
+                    .and_then(|content| {
+                        content.parse::<toml::Table>().ok().and_then(|table| {
+                            table
+                                .get("translation")
+                                .and_then(|t| t.get("language_name"))
+                                .and_then(|n| n.as_str())
+                                .map(String::from)
+                        })
+                    })
+                    .unwrap_or_else(|| lang_code.to_string());
+                languages.push((lang_code.to_string(), display_name));
+            }
+        }
+    }
+
+    languages
+}
+
+/// Prompt user to select their preferred language interactively.
+///
+/// Fetches the language list from plugins. If only en-US is available, skips the prompt.
+async fn prompt_language_selection() -> anyhow::Result<String> {
+    let languages = get_available_languages().await;
+
+    // Only English available (registry unreachable, no installed plugins) — skip prompt
+    if languages.len() <= 1 {
+        return Ok("en-US".to_string());
+    }
+
     out_info!("{}", theme::brand_bold("Welcome to ADI! 🎉"));
     out_info!("Please select your preferred language:");
 
-    let items: Vec<String> = AVAILABLE_LANGUAGES
+    let items: Vec<String> = languages
         .iter()
         .map(|(code, name)| format!("{} ({})", name, code))
         .collect();
@@ -260,7 +322,7 @@ fn prompt_language_selection() -> anyhow::Result<String> {
         .default(0)
         .interact()?;
 
-    Ok(AVAILABLE_LANGUAGES[selection].0.to_string())
+    Ok(languages[selection].0.clone())
 }
 
 async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
@@ -288,7 +350,7 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
             .unwrap_or_else(|| "en-US".to_string())
     } else if UserConfig::is_first_run()? && UserConfig::is_interactive() {
         // First run in interactive session - prompt user
-        let selected_lang = prompt_language_selection()?;
+        let selected_lang = prompt_language_selection().await?;
 
         // Save the preference
         config.language = Some(selected_lang.clone());
@@ -303,18 +365,6 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
         "en-US".to_string()
     };
 
-    // Supported languages (must have translation plugins in registry)
-    const SUPPORTED_LANGUAGES: &[&str] = &[
-        "en-US", "de-DE", "es-ES", "fr-FR", "ja-JP", "ko-KR", "ru-RU", "uk-UA", "zh-CN",
-    ];
-
-    // Check if requested language is supported, fallback to en-US if not
-    let effective_lang = if SUPPORTED_LANGUAGES.contains(&user_lang.as_str()) {
-        user_lang.clone()
-    } else {
-        "en-US".to_string()
-    };
-
     // Initialize i18n with direct FTL file loading (no plugin service registry needed)
     let mut i18n = I18n::new_standalone();
 
@@ -322,8 +372,8 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
     let _ = i18n.load_embedded("en-US", include_str!("../plugins/en-US/messages.ftl"));
 
     // Try to load additional language from installed plugins
-    if effective_lang != "en-US" {
-        let translation_id = format!("adi.cli.{}", effective_lang);
+    if user_lang != "en-US" {
+        let translation_id = format!("adi.cli.{}", user_lang);
         
         // Get plugins directory
         let plugins_dir = dirs::data_local_dir()
@@ -335,7 +385,7 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
         let plugin_dir = plugins_dir.join(&translation_id);
         let ftl_loaded = if let Some(ftl_path) = find_messages_ftl(&plugin_dir) {
             if let Ok(ftl_content) = std::fs::read_to_string(&ftl_path) {
-                i18n.load_embedded(&effective_lang, &ftl_content).is_ok()
+                i18n.load_embedded(&user_lang, &ftl_content).is_ok()
             } else {
                 false
             }
@@ -345,14 +395,14 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
 
         // If not found, try to install from registry
         if !ftl_loaded {
-            out_info!("{}", theme::muted(format!("Installing {} translation plugin...", effective_lang)));
+            out_info!("{}", theme::muted(format!("Installing {} translation plugin...", user_lang)));
 
             let manager = PluginManager::new();
             if manager.install_plugin(&translation_id, None).await.is_ok() {
                 // Successfully installed, try loading again
                 if let Some(ftl_path) = find_messages_ftl(&plugin_dir) {
                     if let Ok(ftl_content) = std::fs::read_to_string(&ftl_path) {
-                        let _ = i18n.load_embedded(&effective_lang, &ftl_content);
+                        let _ = i18n.load_embedded(&user_lang, &ftl_content);
                     }
                 }
             } else {
@@ -362,7 +412,7 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
     }
 
     // Try to set requested language, fallback to en-US if not available
-    if i18n.set_language(&effective_lang).is_err() {
+    if i18n.set_language(&user_lang).is_err() {
         let _ = i18n.set_language("en-US");
     }
     init_global(i18n);
