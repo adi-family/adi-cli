@@ -79,6 +79,28 @@ enum Commands {
         shell: Option<CompletionShell>,
     },
 
+    /// Stream live logs from a plugin
+    Logs {
+        /// Plugin ID to stream logs from (e.g., adi.hive)
+        plugin_id: String,
+
+        /// Follow log output (stream continuously)
+        #[arg(short = 'f', long)]
+        follow: bool,
+
+        /// Number of recent lines to show
+        #[arg(short = 'n', long, default_value = "50")]
+        lines: u32,
+
+        /// Minimum log level (trace, debug, info, warn, error, fatal)
+        #[arg(long)]
+        level: Option<String>,
+
+        /// Filter by service name
+        #[arg(long)]
+        service: Option<String>,
+    },
+
     /// Plugin-provided commands (dynamically discovered from installed plugins)
     #[command(external_subcommand)]
     External(Vec<String>),
@@ -161,6 +183,13 @@ async fn main() -> anyhow::Result<()> {
         Commands::Run { plugin_id, args } => cmd_run(plugin_id, args).await?,
         Commands::Completions { shell } => cmd_completions(shell),
         Commands::Init { shell } => cmd_init(shell)?,
+        Commands::Logs {
+            plugin_id,
+            follow,
+            lines,
+            level,
+            service,
+        } => cmd_logs(&plugin_id, follow, lines, level, service).await?,
         Commands::External(args) => cmd_external(args).await?,
     }
 
@@ -214,8 +243,7 @@ fn cmd_init(shell: Option<CompletionShell>) -> anyhow::Result<()> {
 ///
 /// Priority: ADI_THEME env var > config file theme > default ("indigo").
 fn initialize_theme() {
-    let theme_id = std::env::var("ADI_THEME")
-        .ok()
+    let theme_id = cli::clienv::theme()
         .or_else(|| UserConfig::load().ok().and_then(|c| c.theme))
         .unwrap_or_else(|| lib_console_output::theme::generated::DEFAULT_THEME.to_string());
     lib_console_output::theme::init(&theme_id);
@@ -267,11 +295,11 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
     // 6. Default to en-US
     let user_lang = if let Some(lang) = lang_override {
         lang.to_string()
-    } else if let Ok(env_lang) = std::env::var("ADI_LANG") {
+    } else if let Some(env_lang) = cli::clienv::lang() {
         env_lang
     } else if let Some(saved_lang) = &config.language {
         saved_lang.clone()
-    } else if let Ok(system_lang) = std::env::var("LANG") {
+    } else if let Some(system_lang) = cli::clienv::system_lang() {
         system_lang
             .split('.')
             .next()
@@ -749,6 +777,72 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
     }
 }
 
+/// Stream logs from a plugin's LogProvider.
+async fn cmd_logs(
+    plugin_id: &str,
+    follow: bool,
+    lines: u32,
+    level: Option<String>,
+    service: Option<String>,
+) -> anyhow::Result<()> {
+    use lib_console_output::theme;
+    use lib_plugin_abi_v3::logs::LogStreamContext;
+
+    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
+
+    // Load the target plugin
+    if let Err(e) = runtime.scan_and_load_plugin(plugin_id).await {
+        eprintln!(
+            "{} {}",
+            style("Error:").red().bold(),
+            format!("Failed to load plugin {}: {}", plugin_id, e)
+        );
+        std::process::exit(1);
+    }
+
+    // Get the log provider
+    let log_provider = runtime.get_log_provider(plugin_id);
+    let log_provider = match log_provider {
+        Some(p) => p,
+        None => {
+            eprintln!(
+                "{} Plugin {} does not provide log streaming.",
+                style("Error:").red().bold(),
+                style(plugin_id).cyan()
+            );
+            std::process::exit(1);
+        }
+    };
+
+    let ctx = LogStreamContext {
+        service,
+        level,
+        tail: Some(lines),
+        follow,
+    };
+
+    let mut stream = log_provider.log_stream(ctx).await.map_err(|e| {
+        anyhow::anyhow!("Failed to create log stream: {}", e)
+    })?;
+
+    while let Some(line) = stream.next().await {
+        let level_colored = match line.level.as_str() {
+            "trace" => theme::muted(&line.level).to_string(),
+            "debug" => theme::debug(&line.level).to_string(),
+            "info" => theme::success(&line.level).to_string(),
+            "notice" => theme::debug(&line.level).to_string(),
+            "warn" => theme::warning(&line.level).to_string(),
+            "error" => theme::error(&line.level).to_string(),
+            "fatal" => theme::brand_bold(&line.level).to_string(),
+            _ => line.level.clone(),
+        };
+        let timestamp = line.timestamp.format("%H:%M:%S%.3f");
+        println!("{} {} [{}] {}", timestamp, line.service, level_colored, line.message);
+    }
+
+    Ok(())
+}
+
 /// Handle external (plugin-provided) commands.
 ///
 /// This function discovers CLI commands from installed plugin manifests,
@@ -864,9 +958,7 @@ async fn try_autoinstall_plugin(
     use std::io::{self, Write};
 
     // Check if auto-install is disabled
-    let auto_install_disabled = std::env::var("ADI_AUTO_INSTALL")
-        .map(|v| v.eq_ignore_ascii_case("false") || v == "0")
-        .unwrap_or(false);
+    let auto_install_disabled = cli::clienv::auto_install_disabled();
 
     // Infer plugin ID from command: hive -> adi.cli.hive
     let plugin_id = format!("adi.cli.{}", command);
@@ -1168,8 +1260,7 @@ struct ConnectRequest {
 }
 
 fn default_signaling_url() -> String {
-    std::env::var("SIGNALING_SERVER_URL")
-        .unwrap_or_else(|_| "wss://adi.the-ihor.com/api/signaling/ws".to_string())
+    cli::clienv::signaling_url()
 }
 
 /// Get a friendly machine name for display

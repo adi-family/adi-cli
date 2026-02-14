@@ -51,7 +51,7 @@ impl Default for RuntimeConfig {
         Self {
             plugins_dir: data_dir.join("plugins"),
             cache_dir: data_dir.join("cache"),
-            registry_url: std::env::var("ADI_REGISTRY_URL").ok(),
+            registry_url: crate::clienv::registry_url_override(),
             require_signatures: false,
             host_version: env!("CARGO_PKG_VERSION").to_string(),
         }
@@ -230,6 +230,11 @@ impl PluginRuntime {
                 (id, description)
             })
             .collect()
+    }
+
+    /// Get a log provider for a specific plugin.
+    pub fn get_log_provider(&self, plugin_id: &str) -> Option<std::sync::Arc<dyn lib_plugin_abi_v3::logs::LogProvider>> {
+        self.manager_v3.read().unwrap().get_log_provider(plugin_id)
     }
 
     /// Run a CLI command for a specific plugin. Returns result string.

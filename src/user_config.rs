@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-/// User preferences stored in ~/.config/adi/config.toml
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UserConfig {
     /// Preferred language (e.g., "en-US", "zh-CN", "uk-UA")
@@ -13,13 +12,9 @@ pub struct UserConfig {
 }
 
 impl UserConfig {
-    /// Get path to user config file (~/.config/adi/config.toml)
+    /// Get path to user config file ($ADI_CONFIG_DIR/config.toml or ~/.config/adi/config.toml)
     pub fn config_path() -> Result<PathBuf> {
-        let config_dir = dirs::config_dir()
-            .context("Failed to get config directory")?
-            .join("adi");
-
-        Ok(config_dir.join("config.toml"))
+        Ok(crate::clienv::config_dir().join("config.toml"))
     }
 
     /// Load user config from disk, returns default if file doesn't exist

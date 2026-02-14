@@ -8,8 +8,6 @@ use lib_plugin_registry::{PluginEntry, PluginInfo, RegistryClient, SearchKind, S
 
 use crate::error::Result;
 
-const DEFAULT_REGISTRY_URL: &str = "https://adi-plugin-registry.the-ihor.com";
-
 pub struct PluginManager {
     client: RegistryClient,
     install_dir: PathBuf,
@@ -23,8 +21,7 @@ impl Default for PluginManager {
 
 impl PluginManager {
     pub fn new() -> Self {
-        let registry_url =
-            std::env::var("ADI_REGISTRY_URL").unwrap_or_else(|_| DEFAULT_REGISTRY_URL.to_string());
+        let registry_url = crate::clienv::registry_url();
 
         let cache_dir = dirs::cache_dir()
             .unwrap_or_else(|| PathBuf::from("."))
