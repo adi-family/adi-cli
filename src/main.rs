@@ -18,7 +18,15 @@ async fn main() -> anyhow::Result<()> {
     init::initialize_i18n(cli.lang.as_deref()).await?;
     init::initialize_theme();
 
-    match cli.command {
+    let command = match cli.command {
+        Some(cmd) => cmd,
+        None => match commands::interactive::select_command().await {
+            Some(cmd) => cmd,
+            None => return Ok(()),
+        },
+    };
+
+    match command {
         Commands::SelfUpdate { force } => cli::self_update::self_update(force).await?,
         Commands::Start { port } => commands::start::cmd_start(port).await?,
         Commands::Plugin { command } => commands::plugin::cmd_plugin(command).await?,

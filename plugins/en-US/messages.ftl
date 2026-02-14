@@ -122,6 +122,59 @@ external-autoinstall-disabled = Auto-install disabled. Run: adi plugin install {
 external-autoinstall-not-found = No plugin found providing command '{ $command }'
 
 # ============================================================================
+# INTERACTIVE COMMAND SELECTION
+# ============================================================================
+
+interactive-select-command = Choose a command
+
+# Command labels
+interactive-cmd-start = start
+interactive-cmd-plugin = plugin
+interactive-cmd-search = search
+interactive-cmd-run = run
+interactive-cmd-logs = logs
+interactive-cmd-debug = debug
+interactive-cmd-self-update = self-update
+interactive-cmd-completions = completions
+interactive-cmd-init = init
+
+# Command descriptions
+interactive-cmd-start-desc = Start local ADI server for browser connection
+interactive-cmd-plugin-desc = Manage plugins from the registry
+interactive-cmd-search-desc = Search for plugins and packages
+interactive-cmd-run-desc = Run a plugin's CLI interface
+interactive-cmd-logs-desc = Stream live logs from a plugin
+interactive-cmd-debug-desc = Debug and diagnostic commands
+interactive-cmd-self-update-desc = Update adi CLI to the latest version
+interactive-cmd-completions-desc = Generate shell completions
+interactive-cmd-init-desc = Initialize shell completions
+
+# Argument prompts
+interactive-self-update-force = Force update even if on latest version?
+interactive-start-port = Port
+interactive-search-query = Search query
+interactive-completions-shell = Select shell
+interactive-init-shell = Select shell (leave empty to auto-detect)
+interactive-logs-plugin-id = Plugin ID (e.g., adi.hive)
+interactive-logs-follow = Follow log output?
+interactive-logs-lines = Number of lines
+
+# Plugin subcommand prompts
+interactive-plugin-select = Select plugin action
+interactive-plugin-list = List available
+interactive-plugin-installed = List installed
+interactive-plugin-search = Search
+interactive-plugin-install = Install
+interactive-plugin-update = Update
+interactive-plugin-update-all = Update all
+interactive-plugin-uninstall = Uninstall
+interactive-plugin-path = Show path
+interactive-plugin-install-id = Plugin ID to install (e.g., adi.tasks)
+interactive-plugin-update-id = Plugin ID to update
+interactive-plugin-uninstall-id = Plugin ID to uninstall
+interactive-plugin-path-id = Plugin ID
+
+# ============================================================================
 # COMMON/SHARED MESSAGES
 # ============================================================================
 

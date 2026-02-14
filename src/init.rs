@@ -76,8 +76,10 @@ pub(crate) async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Resu
             false
         };
 
-        if !ftl_loaded {
+        if !ftl_loaded && should_check_translation(&plugins_dir, &translation_id) {
             out_info!("{}", theme::muted(format!("Installing {} translation plugin...", user_lang)));
+
+            mark_translation_checked(&plugins_dir, &translation_id);
 
             let manager = PluginManager::new();
             if manager.install_plugin(&translation_id, None).await.is_ok() {
@@ -189,6 +191,26 @@ async fn prompt_language_selection() -> anyhow::Result<String> {
         .interact()?;
 
     Ok(languages[selection].0.clone())
+}
+
+/// Check if we should attempt to download a translation plugin (once per day).
+fn should_check_translation(plugins_dir: &std::path::Path, translation_id: &str) -> bool {
+    let stamp = plugins_dir.join(format!(".{}.last-check", translation_id));
+    match std::fs::metadata(&stamp) {
+        Ok(meta) => meta
+            .modified()
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .map_or(true, |age| age > std::time::Duration::from_secs(86400)),
+        Err(_) => true,
+    }
+}
+
+/// Record that we just attempted to install a translation plugin.
+fn mark_translation_checked(plugins_dir: &std::path::Path, translation_id: &str) {
+    let stamp = plugins_dir.join(format!(".{}.last-check", translation_id));
+    let _ = std::fs::create_dir_all(plugins_dir);
+    let _ = std::fs::write(&stamp, []);
 }
 
 /// Find the messages.ftl file in a plugin directory (handles versioned directories)

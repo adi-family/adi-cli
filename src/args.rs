@@ -11,7 +11,7 @@ pub(crate) struct Cli {
     pub lang: Option<String>,
 
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
