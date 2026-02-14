@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
-use console::style;
 use lib_client_github::{no_auth, Client, Release, ReleaseAsset};
+use lib_console_output::theme;
 use lib_i18n_core::t;
 use std::env;
 use std::fs;
@@ -21,7 +21,7 @@ pub async fn check_for_updates() -> Result<Option<String>> {
 }
 
 pub async fn self_update(force: bool) -> Result<()> {
-    println!("{}", style(t!("self-update-checking")).cyan());
+    println!("{}", theme::brand(t!("self-update-checking")));
 
     let latest_version = fetch_latest_version().await?;
 
@@ -29,7 +29,7 @@ pub async fn self_update(force: bool) -> Result<()> {
         {
             let prefix = t!("common-checkmark");
             let msg = t!("self-update-already-latest", "version" => CURRENT_VERSION);
-            println!("{} {}", style(prefix).green(), msg);
+            println!("{} {}", theme::success(prefix), msg);
         }
         return Ok(());
     }
@@ -37,7 +37,7 @@ pub async fn self_update(force: bool) -> Result<()> {
     {
         let prefix = t!("common-arrow");
         let msg = t!("self-update-new-version", "current" => CURRENT_VERSION, "latest" => &latest_version);
-        println!("{} {}", style(prefix).cyan(), msg);
+        println!("{} {}", theme::brand(prefix), msg);
     }
 
     let current_exe = env::current_exe()?;
@@ -46,7 +46,7 @@ pub async fn self_update(force: bool) -> Result<()> {
     {
         let prefix = t!("common-arrow");
         let msg = t!("self-update-downloading");
-        println!("{} {}", style(prefix).cyan(), msg);
+        println!("{} {}", theme::brand(prefix), msg);
     }
     let release = fetch_latest_release().await?;
     let asset = select_asset(&release, &platform)?;
@@ -60,14 +60,14 @@ pub async fn self_update(force: bool) -> Result<()> {
     {
         let prefix = t!("common-arrow");
         let msg = t!("self-update-extracting");
-        println!("{} {}", style(prefix).cyan(), msg);
+        println!("{} {}", theme::brand(prefix), msg);
     }
     let binary_path = extract_binary(&archive_path, &temp_dir)?;
 
     {
         let prefix = t!("common-arrow");
         let msg = t!("self-update-installing");
-        println!("{} {}", style(prefix).cyan(), msg);
+        println!("{} {}", theme::brand(prefix), msg);
     }
     replace_binary(&binary_path, &current_exe)?;
 
@@ -77,7 +77,7 @@ pub async fn self_update(force: bool) -> Result<()> {
     {
         let prefix = t!("common-checkmark");
         let msg = t!("self-update-success", "version" => &latest_version);
-        println!("{} {}", style(prefix).green(), msg);
+        println!("{} {}", theme::success(prefix), msg);
     }
 
     Ok(())

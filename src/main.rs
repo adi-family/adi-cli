@@ -3,8 +3,8 @@ use cli::plugin_registry::PluginManager;
 use cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
 use cli::user_config::UserConfig;
 use clap::{Parser, Subcommand};
-use console::style;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
+use lib_console_output::theme;
 use lib_i18n_core::{init_global, t, I18n};
 use std::sync::Arc;
 
@@ -264,7 +264,7 @@ const AVAILABLE_LANGUAGES: &[(&str, &str)] = &[
 /// Prompt user to select their preferred language interactively
 fn prompt_language_selection() -> anyhow::Result<String> {
     println!();
-    println!("{}", style("Welcome to ADI! 🎉").bold().cyan());
+    println!("{}", theme::brand_bold("Welcome to ADI! 🎉"));
     println!();
     println!("Please select your preferred language:");
     println!();
@@ -316,9 +316,9 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
         println!();
         println!(
             "{}",
-            style(format!("Language set to: {}", selected_lang)).green()
+            theme::success(format!("Language set to: {}", selected_lang))
         );
-        println!("{}", style("You can change this later by setting ADI_LANG environment variable or using --lang flag").dim());
+        println!("{}", theme::muted("You can change this later by setting ADI_LANG environment variable or using --lang flag"));
         println!();
 
         selected_lang
@@ -371,11 +371,10 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
         if !ftl_loaded {
             println!(
                 "{}",
-                style(format!(
+                theme::muted(format!(
                     "Installing {} translation plugin...",
                     effective_lang
                 ))
-                .dim()
             );
 
             let manager = PluginManager::new();
@@ -389,11 +388,10 @@ async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Result<()> {
             } else {
                 eprintln!(
                     "{}",
-                    style(format!(
+                    theme::warning(format!(
                         "Warning: Translation plugin {} not available, using English",
                         translation_id
                     ))
-                    .yellow()
                 );
             }
         }
@@ -452,7 +450,7 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             cmd_search(&query).await?;
         }
         PluginCommands::List => {
-            println!("{}", style(t!("plugin-list-title")).bold());
+            println!("{}", theme::bold(t!("plugin-list-title")));
             println!();
 
             let plugins = manager.list_plugins().await?;
@@ -465,18 +463,18 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             for plugin in plugins {
                 println!(
                     "  {} {} - {} [{}]",
-                    style(&plugin.id).cyan().bold(),
-                    style(format!("v{}", plugin.latest_version)).dim(),
+                    theme::brand_bold(&plugin.id),
+                    theme::muted(format!("v{}", plugin.latest_version)),
                     plugin.description,
-                    style(&plugin.plugin_type).yellow()
+                    theme::warning(&plugin.plugin_type)
                 );
                 if !plugin.tags.is_empty() {
-                    println!("    Tags: {}", style(plugin.tags.join(", ")).dim());
+                    println!("    Tags: {}", theme::muted(plugin.tags.join(", ")));
                 }
             }
         }
         PluginCommands::Installed => {
-            println!("{}", style(t!("plugin-installed-title")).bold());
+            println!("{}", theme::bold(t!("plugin-installed-title")));
             println!();
 
             let installed = manager.list_installed().await?;
@@ -491,8 +489,8 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             for (id, version) in installed {
                 println!(
                     "  {} {}",
-                    style(&id).cyan().bold(),
-                    style(format!("v{}", version)).dim(),
+                    theme::brand_bold(&id),
+                    theme::muted(format!("v{}", version)),
                 );
             }
         }
@@ -524,12 +522,12 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
                     let prefix = t!("common-warning-prefix");
                     let msg =
                         t!("plugin-update-all-warning", "id" => &id, "error" => &e.to_string());
-                    eprintln!("{} {}", style(prefix).yellow(), msg);
+                    eprintln!("{} {}", theme::warning(prefix), msg);
                 }
             }
 
             println!();
-            println!("{}", style(t!("plugin-update-all-done")).green().bold());
+            println!("{}", theme::success(t!("plugin-update-all-done")));
             regenerate_completions_quiet();
         }
         PluginCommands::Uninstall { plugin_id } => {
@@ -553,8 +551,8 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             if !version_file.exists() {
                 eprintln!(
                     "{} Plugin {} is not installed",
-                    style("Error:").red().bold(),
-                    style(&plugin_id).cyan()
+                    theme::error("Error:"),
+                    theme::brand(&plugin_id)
                 );
                 std::process::exit(1);
             }
@@ -578,7 +576,7 @@ fn regenerate_completions_quiet() {
         #[cfg(debug_assertions)]
         eprintln!(
             "{} Failed to regenerate completions: {}",
-            style("Warning:").yellow(),
+            theme::warning("Warning:"),
             e
         );
         let _ = e;
@@ -599,33 +597,33 @@ async fn cmd_search(query: &str) -> anyhow::Result<()> {
     }
 
     if !results.packages.is_empty() {
-        println!("{}", style(t!("search-packages-title")).bold().underlined());
+        println!("{}", theme::bold(t!("search-packages-title")));
         for pkg in &results.packages {
             println!(
                 "  {} {} - {}",
-                style(&pkg.id).cyan().bold(),
-                style(format!("v{}", pkg.latest_version)).dim(),
+                theme::brand_bold(&pkg.id),
+                theme::muted(format!("v{}", pkg.latest_version)),
                 pkg.description
             );
             if !pkg.tags.is_empty() {
-                println!("    Tags: {}", style(pkg.tags.join(", ")).dim());
+                println!("    Tags: {}", theme::muted(pkg.tags.join(", ")));
             }
         }
         println!();
     }
 
     if !results.plugins.is_empty() {
-        println!("{}", style(t!("search-plugins-title")).bold().underlined());
+        println!("{}", theme::bold(t!("search-plugins-title")));
         for plugin in &results.plugins {
             println!(
                 "  {} {} - {} [{}]",
-                style(&plugin.id).cyan().bold(),
-                style(format!("v{}", plugin.latest_version)).dim(),
+                theme::brand_bold(&plugin.id),
+                theme::muted(format!("v{}", plugin.latest_version)),
                 plugin.description,
-                style(&plugin.plugin_type).yellow()
+                theme::warning(&plugin.plugin_type)
             );
             if !plugin.tags.is_empty() {
-                println!("    Tags: {}", style(plugin.tags.join(", ")).dim());
+                println!("    Tags: {}", theme::muted(plugin.tags.join(", ")));
             }
         }
     }
@@ -662,11 +660,11 @@ async fn cmd_services() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    println!("{}", style(t!("services-title")).bold());
+    println!("{}", theme::bold(t!("services-title")));
     println!();
 
     for plugin_id in plugins {
-        println!("  {}", style(&plugin_id).cyan().bold());
+        println!("  {}", theme::brand_bold(&plugin_id));
     }
 
     Ok(())
@@ -713,7 +711,7 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
     let plugin_id = match plugin_id {
         Some(id) => id,
         None => {
-            println!("{}", style(t!("run-title")).bold());
+            println!("{}", theme::bold(t!("run-title")));
             println!();
 
             if runnable.is_empty() {
@@ -724,8 +722,8 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
                 for (id, description) in &runnable {
                     println!(
                         "  {} - {}",
-                        style(id).cyan().bold(),
-                        style(description).dim()
+                        theme::brand_bold(id),
+                        theme::muted(description)
                     );
                 }
                 println!();
@@ -740,7 +738,7 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
         {
             let prefix = t!("common-error-prefix");
             let msg = t!("run-error-not-found", "id" => &plugin_id);
-            eprintln!("{} {}", style(prefix).red().bold(), msg);
+            eprintln!("{} {}", theme::error(prefix), msg);
         }
         eprintln!();
         if runnable.is_empty() {
@@ -770,7 +768,7 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
             {
                 let prefix = t!("common-error-prefix");
                 let msg = t!("run-error-failed", "error" => &e.to_string());
-                eprintln!("{} {}", style(prefix).red().bold(), msg);
+                eprintln!("{} {}", theme::error(prefix), msg);
             }
             std::process::exit(1);
         }
@@ -785,7 +783,6 @@ async fn cmd_logs(
     level: Option<String>,
     service: Option<String>,
 ) -> anyhow::Result<()> {
-    use lib_console_output::theme;
     use lib_plugin_abi_v3::logs::LogStreamContext;
 
     let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
@@ -793,9 +790,10 @@ async fn cmd_logs(
     // Load the target plugin
     if let Err(e) = runtime.scan_and_load_plugin(plugin_id).await {
         eprintln!(
-            "{} {}",
-            style("Error:").red().bold(),
-            format!("Failed to load plugin {}: {}", plugin_id, e)
+            "{} Failed to load plugin {}: {}",
+            theme::error("Error:"),
+            plugin_id,
+            e
         );
         std::process::exit(1);
     }
@@ -807,8 +805,8 @@ async fn cmd_logs(
         None => {
             eprintln!(
                 "{} Plugin {} does not provide log streaming.",
-                style("Error:").red().bold(),
-                style(plugin_id).cyan()
+                theme::error("Error:"),
+                theme::brand(plugin_id)
             );
             std::process::exit(1);
         }
@@ -855,7 +853,7 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
         {
             let prefix = t!("common-error-prefix");
             let msg = t!("external-error-no-command");
-            eprintln!("{} {}", style(prefix).red().bold(), msg);
+            eprintln!("{} {}", theme::error(prefix), msg);
         }
         std::process::exit(1);
     }
@@ -902,7 +900,7 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
             let prefix = t!("common-error-prefix");
             let msg =
                 t!("external-error-load-failed", "id" => &plugin_id, "error" => &e.to_string());
-            eprintln!("{} {}", style(prefix).red().bold(), msg);
+            eprintln!("{} {}", theme::error(prefix), msg);
         }
         eprintln!();
         eprintln!("{}", t!("external-hint-reinstall", "id" => &plugin_id));
@@ -925,7 +923,7 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
             {
                 let prefix = t!("common-error-prefix");
                 let msg = t!("external-error-run-failed", "command" => &command, "error" => &e.to_string());
-                eprintln!("{} {}", style(prefix).red().bold(), msg);
+                eprintln!("{} {}", theme::error(prefix), msg);
             }
             std::process::exit(1);
         }
@@ -1012,7 +1010,7 @@ async fn try_autoinstall_plugin(
                 Ok(()) => {
                     println!(
                         "{} {}",
-                        style(t!("common-success-prefix")).green().bold(),
+                        theme::success(t!("common-success-prefix")),
                         t!("external-autoinstall-success")
                     );
                     eprintln!(); // Blank line before command output
@@ -1021,7 +1019,7 @@ async fn try_autoinstall_plugin(
                 Err(e) => {
                     eprintln!(
                         "{} {}",
-                        style(t!("common-error-prefix")).red().bold(),
+                        theme::error(t!("common-error-prefix")),
                         t!("external-autoinstall-failed", "error" => &e.to_string())
                     );
                     AutoinstallResult::Failed
@@ -1033,7 +1031,7 @@ async fn try_autoinstall_plugin(
             {
                 let prefix = t!("common-error-prefix");
                 let msg = t!("external-error-unknown", "command" => command);
-                eprintln!("{} {}", style(prefix).red().bold(), msg);
+                eprintln!("{} {}", theme::error(prefix), msg);
             }
             eprintln!();
 
@@ -1046,7 +1044,7 @@ async fn try_autoinstall_plugin(
                 eprintln!();
                 eprintln!("{}", t!("external-hint-install"));
             } else {
-                eprintln!("{}", style(t!("external-available-title")).bold());
+                eprintln!("{}", theme::bold(t!("external-available-title")));
                 for cmd in cli_commands {
                     let aliases = if cmd.aliases.is_empty() {
                         String::new()
@@ -1055,9 +1053,9 @@ async fn try_autoinstall_plugin(
                     };
                     eprintln!(
                         "  {} - {}{}",
-                        style(&cmd.command).cyan().bold(),
+                        theme::brand_bold(&cmd.command),
                         cmd.description,
-                        style(aliases).dim()
+                        theme::muted(aliases)
                     );
                 }
             }
@@ -1081,7 +1079,7 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
 
     println!(
         "{}",
-        style("Starting ADI local server...").cyan().bold()
+        theme::brand_bold("Starting ADI local server...")
     );
 
     // Ensure cocoon plugin is installed
@@ -1092,12 +1090,12 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
     if !cocoon_installed {
         println!(
             "{}",
-            style("Installing cocoon plugin...").dim()
+            theme::muted("Installing cocoon plugin...")
         );
         manager.install_plugin("adi.cocoon", None).await?;
         println!(
             "{}",
-            style("Cocoon plugin installed!").green()
+            theme::success("Cocoon plugin installed!")
         );
     }
 
@@ -1142,32 +1140,32 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
     println!();
     println!(
         "  {} {}",
-        style("Name:").dim(),
-        style(&hostname).white().bold()
+        theme::muted("Name:"),
+        theme::bold(&hostname)
     );
     println!(
         "  {} {}",
-        style("URL:").dim(),
-        style(format!("http://localhost:{}", port)).cyan()
+        theme::muted("URL:"),
+        theme::brand(format!("http://localhost:{}", port))
     );
     if !ai_agents.is_empty() {
         println!(
             "  {} {}",
-            style("Agents:").dim(),
-            style(ai_agents.join(", ")).green()
+            theme::muted("Agents:"),
+            theme::success(ai_agents.join(", "))
         );
     }
     if !runtimes.is_empty() {
         println!(
             "  {} {}",
-            style("Runtimes:").dim(),
-            style(runtimes.join(", ")).blue()
+            theme::muted("Runtimes:"),
+            theme::info(runtimes.join(", "))
         );
     }
     println!();
     println!(
         "{}",
-        style("Waiting for browser connection... (Ctrl+C to stop)").dim()
+        theme::muted("Waiting for browser connection... (Ctrl+C to stop)")
     );
     println!();
 
@@ -1181,7 +1179,7 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
     if let Some(req) = connect_rx.recv().await {
         println!(
             "{}",
-            style("Browser connected! Starting cocoon...").green().bold()
+            theme::success("Browser connected! Starting cocoon...")
         );
 
         // Set environment variables for the cocoon service installation
@@ -1204,22 +1202,22 @@ async fn cmd_start(port: u16) -> anyhow::Result<()> {
 
         println!(
             "{}",
-            style("Cocoon installed and running as a background service!").green()
+            theme::success("Cocoon installed and running as a background service!")
         );
         println!(
             "  {} {}",
-            style("Status:").dim(),
-            style("adi cocoon status").cyan()
+            theme::muted("Status:"),
+            theme::brand("adi cocoon status")
         );
         println!(
             "  {} {}",
-            style("Logs:").dim(),
-            style("adi cocoon logs").cyan()
+            theme::muted("Logs:"),
+            theme::brand("adi cocoon logs")
         );
         println!(
             "  {} {}",
-            style("Stop:").dim(),
-            style("adi cocoon stop").cyan()
+            theme::muted("Stop:"),
+            theme::brand("adi cocoon stop")
         );
     }
 

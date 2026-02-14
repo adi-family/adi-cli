@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
+use lib_console_output::theme;
 use lib_i18n_core::t;
 use lib_plugin_registry::{PluginEntry, PluginInfo, RegistryClient, SearchKind, SearchResults};
 
@@ -177,7 +177,7 @@ impl PluginManager {
         {
             let prefix = t!("common-success-prefix");
             let msg = t!("plugin-install-success", "id" => id, "version" => &info.version);
-            println!("{} {}", style(prefix).green().bold(), msg);
+            println!("{} {}", theme::success(prefix), msg);
         }
 
         Ok(())
@@ -198,7 +198,7 @@ impl PluginManager {
                     "id" => id,
                     "version" => current_version.trim()
                 );
-                println!("{} {}", style(prefix).cyan(), msg);
+                println!("{} {}", theme::brand(prefix), msg);
             }
             return Ok(());
         }
@@ -296,7 +296,7 @@ impl PluginManager {
         {
             let prefix = t!("common-success-prefix");
             let msg = t!("plugin-uninstall-success", "id" => id);
-            println!("{} {}", style(prefix).green().bold(), msg);
+            println!("{} {}", theme::success(prefix), msg);
         }
 
         Ok(())
@@ -320,7 +320,7 @@ impl PluginManager {
                 let prefix = t!("common-info-prefix");
                 let msg =
                     t!("plugin-update-already-latest", "id" => id, "version" => &latest.version);
-                println!("{} {}", style(prefix).cyan(), msg);
+                println!("{} {}", theme::brand(prefix), msg);
             }
             return Ok(());
         }
@@ -400,7 +400,7 @@ impl PluginManager {
             {
                 let prefix = t!("common-warning-prefix");
                 let msg = t!("plugin-install-pattern-none", "pattern" => pattern);
-                println!("{} {}", style(prefix).yellow(), msg);
+                println!("{} {}", theme::warning(prefix), msg);
             }
             return Ok(());
         }
@@ -414,8 +414,8 @@ impl PluginManager {
         for plugin in &matching {
             println!(
                 "  {} {} - {}",
-                style(&plugin.id).cyan().bold(),
-                style(format!("v{}", plugin.latest_version)).dim(),
+                theme::brand_bold(&plugin.id),
+                theme::muted(format!("v{}", plugin.latest_version)),
                 plugin.description
             );
         }
@@ -438,7 +438,7 @@ impl PluginManager {
                 Err(e) => {
                     eprintln!(
                         "{} Failed to install {}: {}",
-                        style("Warning:").yellow(),
+                        theme::warning("Warning:"),
                         plugin.id,
                         e
                     );
@@ -451,7 +451,7 @@ impl PluginManager {
         {
             let prefix = t!("common-success-prefix");
             let msg = t!("plugin-install-pattern-success", "count" => &installed.to_string());
-            println!("{} {}", style(prefix).green().bold(), msg);
+            println!("{} {}", theme::success(prefix), msg);
         }
 
         if !failed.is_empty() {
@@ -459,7 +459,7 @@ impl PluginManager {
             {
                 let prefix = t!("common-warning-prefix");
                 let msg = t!("plugin-install-pattern-failed");
-                println!("{} {}", style(prefix).yellow(), msg);
+                println!("{} {}", theme::warning(prefix), msg);
             }
             for id in failed {
                 println!("  - {}", id);
