@@ -134,3 +134,21 @@ common-success-prefix = 성공:
 common-downloading-prefix = →
 common-checkmark = ✓
 common-arrow = →
+
+# ============================================================================
+# 오류 도메인
+# ============================================================================
+
+error-component-not-found = 컴포넌트 '{ $name }'을(를) 찾을 수 없습니다
+error-installation-failed = '{ $component }' 설치 실패: { $reason }
+error-dependency-missing = '{ $component }'에 필요한 종속성 '{ $dependency }'이(가) 설치되지 않았습니다
+error-config = 구성 오류: { $detail }
+error-io = IO 오류: { $detail }
+error-serialization = 직렬화 오류: { $detail }
+error-already-installed = 컴포넌트 '{ $name }'이(가) 이미 설치되어 있습니다
+error-uninstallation-failed = '{ $component }' 제거 실패: { $reason }
+error-registry = 레지스트리 오류: { $detail }
+error-plugin-not-found = 플러그인을 찾을 수 없습니다: { $id }
+error-plugin-host = 플러그인 호스트 오류: { $detail }
+error-service = 서비스 오류: { $detail }
+error-other = 오류: { $detail }

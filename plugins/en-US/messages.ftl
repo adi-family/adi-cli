@@ -134,3 +134,21 @@ common-success-prefix = Success:
 common-downloading-prefix = →
 common-checkmark = ✓
 common-arrow = →
+
+# ============================================================================
+# ERRORS DOMAIN
+# ============================================================================
+
+error-component-not-found = Component '{ $name }' not found
+error-installation-failed = Installation failed for '{ $component }': { $reason }
+error-dependency-missing = Dependency '{ $dependency }' required by '{ $component }' is not installed
+error-config = Configuration error: { $detail }
+error-io = IO error: { $detail }
+error-serialization = Serialization error: { $detail }
+error-already-installed = Component '{ $name }' is already installed
+error-uninstallation-failed = Uninstallation failed for '{ $component }': { $reason }
+error-registry = Registry error: { $detail }
+error-plugin-not-found = Plugin not found: { $id }
+error-plugin-host = Plugin host error: { $detail }
+error-service = Service error: { $detail }
+error-other = Error: { $detail }

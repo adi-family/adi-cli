@@ -1,7 +1,12 @@
 //! Shell completion generation with dynamic plugin support.
 //!
-//! Generates shell completions that include both static commands
-//! and dynamically discovered plugin commands.
+//! It's the glue that makes `adi <Tab>` work in bash/zsh/fish,
+//! including plugin commands that aren't compiled into the binary.
+//!
+//! Generates shell completions that include both static CLI commands
+//! and dynamically discovered plugin commands from installed manifests.
+//! Used by `adi completions <shell>` and auto-invoked on every CLI run
+//! via `ensure_completions_installed` to keep completions up-to-date.
 
 use std::io::Write;
 use std::path::PathBuf;

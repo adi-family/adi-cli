@@ -134,3 +134,21 @@ common-success-prefix = 成功:
 common-downloading-prefix = →
 common-checkmark = ✓
 common-arrow = →
+
+# ============================================================================
+# エラードメイン
+# ============================================================================
+
+error-component-not-found = コンポーネント '{ $name }' が見つかりません
+error-installation-failed = '{ $component }' のインストールに失敗しました: { $reason }
+error-dependency-missing = '{ $component }' に必要な依存関係 '{ $dependency }' がインストールされていません
+error-config = 設定エラー: { $detail }
+error-io = IOエラー: { $detail }
+error-serialization = シリアライズエラー: { $detail }
+error-already-installed = コンポーネント '{ $name }' は既にインストールされています
+error-uninstallation-failed = '{ $component }' のアンインストールに失敗しました: { $reason }
+error-registry = レジストリエラー: { $detail }
+error-plugin-not-found = プラグインが見つかりません: { $id }
+error-plugin-host = プラグインホストエラー: { $detail }
+error-service = サービスエラー: { $detail }
+error-other = エラー: { $detail }

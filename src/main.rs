@@ -5,7 +5,7 @@ use cli::user_config::UserConfig;
 use clap::{Parser, Subcommand};
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use lib_console_output::theme;
-use lib_i18n_core::{init_global, t, I18n};
+use lib_i18n_core::{init_global, t, I18n, LocalizedError};
 use std::sync::Arc;
 
 #[derive(Parser)]
@@ -521,7 +521,7 @@ async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
                 if let Err(e) = manager.update_plugin(&id).await {
                     let prefix = t!("common-warning-prefix");
                     let msg =
-                        t!("plugin-update-all-warning", "id" => &id, "error" => &e.to_string());
+                        t!("plugin-update-all-warning", "id" => &id, "error" => &e.localized());
                     eprintln!("{} {}", theme::warning(prefix), msg);
                 }
             }
@@ -767,7 +767,7 @@ async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result
         Err(e) => {
             {
                 let prefix = t!("common-error-prefix");
-                let msg = t!("run-error-failed", "error" => &e.to_string());
+                let msg = t!("run-error-failed", "error" => &e.localized());
                 eprintln!("{} {}", theme::error(prefix), msg);
             }
             std::process::exit(1);
@@ -899,7 +899,7 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
         {
             let prefix = t!("common-error-prefix");
             let msg =
-                t!("external-error-load-failed", "id" => &plugin_id, "error" => &e.to_string());
+                t!("external-error-load-failed", "id" => &plugin_id, "error" => &e.localized());
             eprintln!("{} {}", theme::error(prefix), msg);
         }
         eprintln!();
@@ -922,7 +922,7 @@ async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
         Err(e) => {
             {
                 let prefix = t!("common-error-prefix");
-                let msg = t!("external-error-run-failed", "command" => &command, "error" => &e.to_string());
+                let msg = t!("external-error-run-failed", "command" => &command, "error" => &e.localized());
                 eprintln!("{} {}", theme::error(prefix), msg);
             }
             std::process::exit(1);
@@ -1020,7 +1020,7 @@ async fn try_autoinstall_plugin(
                     eprintln!(
                         "{} {}",
                         theme::error(t!("common-error-prefix")),
-                        t!("external-autoinstall-failed", "error" => &e.to_string())
+                        t!("external-autoinstall-failed", "error" => &e.localized())
                     );
                     AutoinstallResult::Failed
                 }

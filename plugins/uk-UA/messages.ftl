@@ -134,3 +134,21 @@ common-success-prefix = Успіх:
 common-downloading-prefix = →
 common-checkmark = ✓
 common-arrow = →
+
+# ============================================================================
+# ДОМЕН ПОМИЛОК
+# ============================================================================
+
+error-component-not-found = Компонент '{ $name }' не знайдено
+error-installation-failed = Помилка встановлення '{ $component }': { $reason }
+error-dependency-missing = Залежність '{ $dependency }', необхідна для '{ $component }', не встановлена
+error-config = Помилка конфігурації: { $detail }
+error-io = Помилка введення-виведення: { $detail }
+error-serialization = Помилка серіалізації: { $detail }
+error-already-installed = Компонент '{ $name }' вже встановлено
+error-uninstallation-failed = Помилка видалення '{ $component }': { $reason }
+error-registry = Помилка реєстру: { $detail }
+error-plugin-not-found = Плагін не знайдено: { $id }
+error-plugin-host = Помилка хосту плагінів: { $detail }
+error-service = Помилка сервісу: { $detail }
+error-other = Помилка: { $detail }

@@ -134,3 +134,21 @@ common-success-prefix = 成功:
 common-downloading-prefix = →
 common-checkmark = ✓
 common-arrow = →
+
+# ============================================================================
+# 错误域
+# ============================================================================
+
+error-component-not-found = 未找到组件 '{ $name }'
+error-installation-failed = '{ $component }' 安装失败: { $reason }
+error-dependency-missing = '{ $component }' 所需的依赖 '{ $dependency }' 未安装
+error-config = 配置错误: { $detail }
+error-io = IO 错误: { $detail }
+error-serialization = 序列化错误: { $detail }
+error-already-installed = 组件 '{ $name }' 已安装
+error-uninstallation-failed = '{ $component }' 卸载失败: { $reason }
+error-registry = 注册表错误: { $detail }
+error-plugin-not-found = 未找到插件: { $id }
+error-plugin-host = 插件主机错误: { $detail }
+error-service = 服务错误: { $detail }
+error-other = 错误: { $detail }

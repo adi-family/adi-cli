@@ -134,3 +134,21 @@ common-success-prefix = Успех:
 common-downloading-prefix = →
 common-checkmark = ✓
 common-arrow = →
+
+# ============================================================================
+# ДОМЕН ОШИБОК
+# ============================================================================
+
+error-component-not-found = Компонент '{ $name }' не найден
+error-installation-failed = Ошибка установки '{ $component }': { $reason }
+error-dependency-missing = Зависимость '{ $dependency }', необходимая для '{ $component }', не установлена
+error-config = Ошибка конфигурации: { $detail }
+error-io = Ошибка ввода-вывода: { $detail }
+error-serialization = Ошибка сериализации: { $detail }
+error-already-installed = Компонент '{ $name }' уже установлен
+error-uninstallation-failed = Ошибка удаления '{ $component }': { $reason }
+error-registry = Ошибка реестра: { $detail }
+error-plugin-not-found = Плагин не найден: { $id }
+error-plugin-host = Ошибка хоста плагинов: { $detail }
+error-service = Ошибка сервиса: { $detail }
+error-other = Ошибка: { $detail }

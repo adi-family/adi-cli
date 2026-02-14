@@ -1,3 +1,8 @@
+// Centralized environment variable access for the ADI CLI crate.
+// All env var names are defined in the `EnvVar` enum (via `env_vars!` macro),
+// and typed getter functions below provide safe access throughout `crates/cli`.
+// Other crates should never read these env vars directly — use this module instead.
+
 use std::path::PathBuf;
 
 use lib_env_parse::{env_bool_default_true, env_opt, env_or, env_vars};

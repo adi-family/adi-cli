@@ -134,3 +134,21 @@ common-success-prefix = Éxito:
 common-downloading-prefix = →
 common-checkmark = ✓
 common-arrow = →
+
+# ============================================================================
+# DOMINIO DE ERRORES
+# ============================================================================
+
+error-component-not-found = Componente '{ $name }' no encontrado
+error-installation-failed = Instalación fallida para '{ $component }': { $reason }
+error-dependency-missing = Dependencia '{ $dependency }' requerida por '{ $component }' no está instalada
+error-config = Error de configuración: { $detail }
+error-io = Error de E/S: { $detail }
+error-serialization = Error de serialización: { $detail }
+error-already-installed = El componente '{ $name }' ya está instalado
+error-uninstallation-failed = Desinstalación fallida para '{ $component }': { $reason }
+error-registry = Error del registro: { $detail }
+error-plugin-not-found = Plugin no encontrado: { $id }
+error-plugin-host = Error del host de plugins: { $detail }
+error-service = Error del servicio: { $detail }
+error-other = Error: { $detail }
