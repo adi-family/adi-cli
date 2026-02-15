@@ -11,7 +11,7 @@ pub(crate) async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
 
     match command {
         PluginCommands::Search { query } => {
-            super::search::cmd_search(&query).await?;
+            crate::cmd_search::cmd_search(&query).await?;
         }
         PluginCommands::List => {
             Section::new(t!("plugin-list-title")).print();

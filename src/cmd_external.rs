@@ -3,7 +3,7 @@ use cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
 use lib_console_output::{theme, blocks::{Columns, Section, Renderable}, out_info, out_warn, out_error, out_success};
 use lib_i18n_core::{t, LocalizedError};
 
-use super::run::handle_cli_result;
+use crate::cmd_run::handle_cli_result;
 
 pub(crate) async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
     if args.is_empty() {
