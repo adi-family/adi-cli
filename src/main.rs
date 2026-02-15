@@ -46,28 +46,37 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    match &command {
-        Commands::SelfUpdate { force } => tracing::trace!(force = force, "Dispatching: self-update"),
-        Commands::Start { port } => tracing::trace!(port = port, "Dispatching: start"),
-        Commands::Plugin { .. } => tracing::trace!("Dispatching: plugin"),
-        Commands::Run { plugin_id, .. } => tracing::trace!(plugin_id = ?plugin_id, "Dispatching: run"),
-        Commands::Logs { plugin_id, .. } => tracing::trace!(plugin_id = %plugin_id, "Dispatching: logs"),
-        Commands::External(args) => tracing::trace!(args = ?args, "Dispatching: external"),
-    }
-
     match command {
-        Commands::SelfUpdate { force } => cli::self_update::self_update(force).await?,
-        Commands::Start { port } => cmd_start::cmd_start(port).await?,
-        Commands::Plugin { command } => cmd_plugin::cmd_plugin(command).await?,
-        Commands::Run { plugin_id, args } => cmd_run::cmd_run(plugin_id, args).await?,
+        Commands::SelfUpdate { force } => {
+            tracing::trace!(force = force, "Dispatching: self-update");
+            cli::self_update::self_update(force).await?
+        }
+        Commands::Start { port } => {
+            tracing::trace!(port = port, "Dispatching: start");
+            cmd_start::cmd_start(port).await?
+        }
+        Commands::Plugin { command } => {
+            tracing::trace!("Dispatching: plugin");
+            cmd_plugin::cmd_plugin(command).await?
+        }
+        Commands::Run { plugin_id, args } => {
+            tracing::trace!(plugin_id = ?plugin_id, "Dispatching: run");
+            cmd_run::cmd_run(plugin_id, args).await?
+        }
         Commands::Logs {
             plugin_id,
             follow,
             lines,
             level,
             service,
-        } => cmd_logs::cmd_logs(&plugin_id, follow, lines, level, service).await?,
-        Commands::External(args) => cmd_external::cmd_external(args).await?,
+        } => {
+            tracing::trace!(plugin_id = %plugin_id, "Dispatching: logs");
+            cmd_logs::cmd_logs(&plugin_id, follow, lines, level, service).await?
+        }
+        Commands::External(args) => {
+            tracing::trace!(args = ?args, "Dispatching: external");
+            cmd_external::cmd_external(args).await?
+        }
     }
 
     tracing::trace!("ADI CLI finished");
