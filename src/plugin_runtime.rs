@@ -44,13 +44,9 @@ pub struct RuntimeConfig {
 
 impl Default for RuntimeConfig {
     fn default() -> Self {
-        let data_dir = dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("adi");
-
         Self {
-            plugins_dir: data_dir.join("plugins"),
-            cache_dir: data_dir.join("cache"),
+            plugins_dir: lib_plugin_host::PluginConfig::default_plugins_dir(),
+            cache_dir: lib_plugin_host::PluginConfig::default_cache_dir(),
             registry_url: crate::clienv::registry_url_override(),
             require_signatures: false,
             host_version: env!("CARGO_PKG_VERSION").to_string(),

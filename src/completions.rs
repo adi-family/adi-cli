@@ -133,10 +133,7 @@ pub fn get_dynamic_completion_plugins() -> &'static Vec<String> {
 fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
     use lib_plugin_manifest::PluginManifest;
 
-    let plugins_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("adi")
-        .join("plugins");
+    let plugins_dir = lib_plugin_host::PluginConfig::default_plugins_dir();
 
     if !plugins_dir.exists() {
         tracing::trace!(dir = %plugins_dir.display(), "Plugins dir does not exist, skipping manifest scan");
@@ -750,10 +747,7 @@ pub fn ensure_completions_installed<C: CommandFactory>(bin_name: &str) {
 
 /// Check if completions file is older than the plugins directory.
 fn completions_outdated(completion_file: &std::path::Path) -> bool {
-    let plugins_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("adi")
-        .join("plugins");
+    let plugins_dir = lib_plugin_host::PluginConfig::default_plugins_dir();
 
     // If plugins dir doesn't exist, no need to regenerate
     if !plugins_dir.exists() {

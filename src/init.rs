@@ -73,10 +73,7 @@ pub(crate) async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Resu
         let translation_id = format!("adi.cli.{}", user_lang);
         tracing::trace!(translation_id = %translation_id, "Looking for translation plugin");
 
-        let plugins_dir = dirs::data_local_dir()
-            .unwrap_or_else(|| std::path::PathBuf::from("."))
-            .join("adi")
-            .join("plugins");
+        let plugins_dir = lib_plugin_host::PluginConfig::default_plugins_dir();
 
         let plugin_dir = plugins_dir.join(&translation_id);
         let ftl_loaded = if let Some(ftl_path) = find_messages_ftl(&plugin_dir) {
@@ -156,10 +153,7 @@ async fn get_available_languages() -> Vec<(String, String)> {
     tracing::trace!("Registry unreachable, scanning installed plugins for translations");
 
     // Registry unreachable — scan installed plugins for translation metadata
-    let plugins_dir = dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("adi")
-        .join("plugins");
+    let plugins_dir = lib_plugin_host::PluginConfig::default_plugins_dir();
 
     if let Ok(mut entries) = tokio::fs::read_dir(&plugins_dir).await {
         while let Ok(Some(entry)) = entries.next_entry().await {

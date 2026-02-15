@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use indicatif::{ProgressBar, ProgressStyle};
 use lib_console_output::theme;
 use lib_i18n_core::t;
-use lib_plugin_host::{is_glob_pattern, PluginInstaller, UpdateCheck};
+use lib_plugin_host::{is_glob_pattern, PluginConfig, PluginInstaller, UpdateCheck};
 use lib_plugin_registry::{PluginEntry, PluginInfo, SearchResults};
 
 use crate::error::Result;
@@ -26,40 +26,28 @@ impl Default for PluginManager {
 impl PluginManager {
     pub fn new() -> Self {
         let registry_url = crate::clienv::registry_url();
+        let config = PluginConfig::default().with_registry(&registry_url);
 
-        let cache_dir = dirs::cache_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("adi")
-            .join("registry-cache");
+        tracing::trace!(
+            registry_url = %registry_url,
+            plugins_dir = %config.plugins_dir.display(),
+            cache_dir = %config.cache_dir.display(),
+            "Creating PluginManager"
+        );
 
-        let install_dir = dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("adi")
-            .join("plugins");
-
-        tracing::trace!(registry_url = %registry_url, cache_dir = %cache_dir.display(), install_dir = %install_dir.display(), "Creating PluginManager");
-
-        let installer = PluginInstaller::new(&registry_url, install_dir, cache_dir);
-
-        Self { installer }
+        Self {
+            installer: PluginInstaller::from_config(&config),
+        }
     }
 
     pub fn with_registry_url(url: &str) -> Self {
-        let cache_dir = dirs::cache_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("adi")
-            .join("registry-cache");
-
-        let install_dir = dirs::data_local_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("adi")
-            .join("plugins");
+        let config = PluginConfig::default().with_registry(url);
 
         tracing::trace!(registry_url = %url, "Creating PluginManager with custom registry URL");
 
-        let installer = PluginInstaller::new(url, install_dir, cache_dir);
-
-        Self { installer }
+        Self {
+            installer: PluginInstaller::from_config(&config),
+        }
     }
 
     // -- Delegated registry operations --
