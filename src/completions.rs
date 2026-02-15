@@ -130,6 +130,7 @@ pub fn get_dynamic_completion_plugins() -> &'static Vec<String> {
 
 /// Discover and add plugin commands by reading manifest files directly.
 /// This avoids needing a tokio runtime by reading files synchronously.
+/// Uses the command index (symlinks) for fast discovery, falls back to full scan.
 fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
     use lib_plugin_manifest::PluginManifest;
 
@@ -140,45 +141,36 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
         return cmd;
     }
 
-    tracing::trace!(dir = %plugins_dir.display(), "Scanning plugin manifests for completions");
+    tracing::trace!(dir = %plugins_dir.display(), "Discovering plugin commands for completions");
     let mut dynamic_plugins = Vec::new();
 
-    // Scan plugins directory for plugin.toml files
-    if let Ok(entries) = std::fs::read_dir(&plugins_dir) {
-        for entry in entries.flatten() {
-            let plugin_dir = entry.path();
-            if !plugin_dir.is_dir() {
-                continue;
-            }
+    // Collect unique manifest paths to parse
+    let manifest_paths = collect_cli_manifest_paths(&plugins_dir);
 
-            // Find plugin.toml manifest
-            if let Some(manifest_path) = find_plugin_manifest(&plugin_dir) {
-                if let Ok(manifest) = PluginManifest::from_file(&manifest_path) {
-                    if let Some(cli) = &manifest.cli {
-                        // Leak strings to get 'static lifetime required by clap
-                        let name: &'static str = Box::leak(cli.command.clone().into_boxed_str());
-                        let desc: &'static str =
-                            Box::leak(cli.description.clone().into_boxed_str());
+    for manifest_path in manifest_paths {
+        if let Ok(manifest) = PluginManifest::from_file(&manifest_path) {
+            if let Some(cli) = &manifest.cli {
+                // Leak strings to get 'static lifetime required by clap
+                let name: &'static str = Box::leak(cli.command.clone().into_boxed_str());
+                let desc: &'static str = Box::leak(cli.description.clone().into_boxed_str());
 
-                        let mut subcmd = Command::new(name)
-                            .about(desc)
-                            .allow_external_subcommands(true);
+                let mut subcmd = Command::new(name)
+                    .about(desc)
+                    .allow_external_subcommands(true);
 
-                        for alias in &cli.aliases {
-                            let alias_static: &'static str =
-                                Box::leak(alias.clone().into_boxed_str());
-                            subcmd = subcmd.visible_alias(alias_static);
-                        }
-
-                        // Track if this plugin supports dynamic completions
-                        if cli.dynamic_completions {
-                            dynamic_plugins.push(cli.command.clone());
-                        }
-
-                        tracing::trace!(command = %name, "Added plugin command to completions");
-                        cmd = cmd.subcommand(subcmd);
-                    }
+                for alias in &cli.aliases {
+                    let alias_static: &'static str =
+                        Box::leak(alias.clone().into_boxed_str());
+                    subcmd = subcmd.visible_alias(alias_static);
                 }
+
+                // Track if this plugin supports dynamic completions
+                if cli.dynamic_completions {
+                    dynamic_plugins.push(cli.command.clone());
+                }
+
+                tracing::trace!(command = %name, "Added plugin command to completions");
+                cmd = cmd.subcommand(subcmd);
             }
         }
     }
@@ -189,6 +181,52 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
     let _ = DYNAMIC_COMPLETION_PLUGINS.set(dynamic_plugins);
 
     cmd
+}
+
+/// Collect unique manifest paths for plugins with CLI commands.
+/// Tries the command index first, falls back to full directory scan.
+fn collect_cli_manifest_paths(plugins_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    use std::collections::HashSet;
+
+    let cmds_dir = lib_plugin_host::command_index::commands_dir(plugins_dir);
+
+    // Fast path: use command index
+    if cmds_dir.exists() {
+        let indexed = lib_plugin_host::command_index::list_indexed_commands(plugins_dir);
+        if !indexed.is_empty() {
+            tracing::trace!(count = indexed.len(), "Using command index for completions");
+            let mut seen = HashSet::new();
+            return indexed
+                .into_iter()
+                .filter_map(|(_name, path)| {
+                    if seen.insert(path.clone()) {
+                        Some(path)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+        }
+    }
+
+    // Fallback: full scan
+    tracing::trace!("Command index unavailable, falling back to full scan for completions");
+    let mut paths = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(plugins_dir) {
+        for entry in entries.flatten() {
+            let plugin_dir = entry.path();
+            if !plugin_dir.is_dir() {
+                continue;
+            }
+            if entry.file_name() == lib_plugin_host::command_index::COMMANDS_DIR_NAME {
+                continue;
+            }
+            if let Some(manifest_path) = find_plugin_manifest(&plugin_dir) {
+                paths.push(manifest_path);
+            }
+        }
+    }
+    paths
 }
 
 /// Find the plugin.toml manifest in a plugin directory.
@@ -766,6 +804,10 @@ fn completions_outdated(completion_file: &std::path::Path) -> bool {
     // Check if any plugin dir is newer than completion file
     if let Ok(entries) = std::fs::read_dir(&plugins_dir) {
         for entry in entries.flatten() {
+            // Skip the command index directory
+            if entry.file_name() == lib_plugin_host::command_index::COMMANDS_DIR_NAME {
+                continue;
+            }
             if let Ok(meta) = entry.metadata() {
                 if let Ok(modified) = meta.modified() {
                     if modified > completion_time {

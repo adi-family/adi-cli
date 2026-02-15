@@ -106,6 +106,9 @@ impl PluginRuntime {
             for entry in entries.flatten() {
                 let plugin_dir = entry.path();
                 if plugin_dir.is_dir() {
+                    if entry.file_name() == lib_plugin_host::command_index::COMMANDS_DIR_NAME {
+                        continue;
+                    }
                     if let Some(name) = plugin_dir.file_name() {
                         plugin_ids.push(name.to_string_lossy().to_string());
                     }
@@ -180,25 +183,36 @@ impl PluginRuntime {
         }
     }
 
-    /// Resolve the plugin directory (handles versioned directories)
+    /// Resolve the plugin directory (handles versioned directories).
+    ///
+    /// Prefers the `latest` symlink for O(1) resolution, falls back to `.version` file.
     fn resolve_plugin_dir(&self, plugin_id: &str) -> Result<PathBuf> {
         let plugin_dir = self.config.plugins_dir.join(plugin_id);
 
-        // Check for .version file to get current version
+        // Fast path: use latest symlink
+        let latest_link = plugin_dir.join(lib_plugin_host::command_index::LATEST_LINK_NAME);
+        if latest_link.is_symlink() {
+            if let Ok(resolved) = std::fs::canonicalize(&latest_link) {
+                tracing::trace!(plugin_id = %plugin_id, dir = %resolved.display(), "Resolved via latest symlink");
+                return Ok(resolved);
+            }
+        }
+
+        // Fallback: read .version file
         let version_file = plugin_dir.join(".version");
         if version_file.exists() {
             if let Ok(version) = std::fs::read_to_string(&version_file) {
                 let version = version.trim();
                 let versioned_dir = plugin_dir.join(version);
                 if versioned_dir.exists() {
-                    tracing::trace!(plugin_id = %plugin_id, version = %version, dir = %versioned_dir.display(), "Resolved versioned plugin directory");
+                    tracing::trace!(plugin_id = %plugin_id, version = %version, dir = %versioned_dir.display(), "Resolved via .version file");
                     return Ok(versioned_dir);
                 }
             }
         }
 
         // Fallback to plugin_dir itself
-        tracing::trace!(plugin_id = %plugin_id, dir = %plugin_dir.display(), "Using plugin directory directly (no version file)");
+        tracing::trace!(plugin_id = %plugin_id, dir = %plugin_dir.display(), "Using plugin directory directly");
         Ok(plugin_dir)
     }
 
@@ -380,24 +394,73 @@ impl PluginRuntime {
 
     /// Discover CLI commands from installed plugin manifests.
     ///
-    /// This scans plugin.toml files in the plugins directory WITHOUT loading
-    /// plugin binaries, making it fast for CLI command discovery.
-    ///
-    /// Returns a list of CLI commands with their plugin IDs, descriptions, and aliases.
+    /// Uses the command index (symlinks in `commands/` dir) for fast discovery.
+    /// Falls back to a full directory scan if the index is missing or empty,
+    /// and rebuilds the index as a side effect.
     pub fn discover_cli_commands(&self) -> Vec<PluginCliCommand> {
-        tracing::trace!("Discovering CLI commands from plugin manifests");
+        tracing::trace!("Discovering CLI commands");
 
-        let mut commands = Vec::new();
-
-        // Scan plugins directory for plugin.toml files
         let plugins_dir = &self.config.plugins_dir;
         if !plugins_dir.exists() {
-            tracing::trace!(dir = %plugins_dir.display(), "Plugins directory does not exist, no commands to discover");
-            return commands;
+            tracing::trace!(dir = %plugins_dir.display(), "Plugins directory does not exist");
+            return Vec::new();
         }
 
-        // Each plugin is in a subdirectory: plugins/<plugin-id>/<version>/plugin.toml
-        // or plugins/<plugin-id>/.version pointing to current version
+        // Fast path: use command index
+        let cmds_dir = lib_plugin_host::command_index::commands_dir(plugins_dir);
+        if cmds_dir.exists() {
+            let indexed = lib_plugin_host::command_index::list_indexed_commands(plugins_dir);
+            if !indexed.is_empty() {
+                tracing::trace!(count = indexed.len(), "Using command index (fast path)");
+                return Self::commands_from_index(indexed);
+            }
+        }
+
+        // Fallback: full scan, then rebuild index
+        tracing::trace!("Command index missing or empty, falling back to full scan");
+        let commands = self.discover_cli_commands_full_scan();
+
+        if let Err(e) = lib_plugin_host::command_index::rebuild_index(plugins_dir) {
+            tracing::warn!(error = %e, "Failed to rebuild command index");
+        }
+
+        commands
+    }
+
+    /// Build PluginCliCommand list from resolved index entries.
+    /// Deduplicates by manifest path (aliases point to same manifest).
+    fn commands_from_index(indexed: Vec<(String, PathBuf)>) -> Vec<PluginCliCommand> {
+        let mut seen = std::collections::HashMap::<PathBuf, PluginCliCommand>::new();
+
+        for (_cmd_name, manifest_path) in indexed {
+            if seen.contains_key(&manifest_path) {
+                continue;
+            }
+
+            if let Ok(manifest) = PluginManifest::from_file(&manifest_path) {
+                if let Some(cli) = &manifest.cli {
+                    seen.insert(
+                        manifest_path,
+                        PluginCliCommand {
+                            command: cli.command.clone(),
+                            plugin_id: manifest.plugin.id.clone(),
+                            description: cli.description.clone(),
+                            aliases: cli.aliases.clone(),
+                        },
+                    );
+                }
+            }
+        }
+
+        seen.into_values().collect()
+    }
+
+    /// Full directory scan for CLI commands (original discovery logic).
+    /// Used as fallback when command index is unavailable.
+    fn discover_cli_commands_full_scan(&self) -> Vec<PluginCliCommand> {
+        let mut commands = Vec::new();
+        let plugins_dir = &self.config.plugins_dir;
+
         if let Ok(entries) = std::fs::read_dir(plugins_dir) {
             for entry in entries.flatten() {
                 let plugin_dir = entry.path();
@@ -405,7 +468,11 @@ impl PluginRuntime {
                     continue;
                 }
 
-                // Try to find plugin.toml in versioned subdirectory
+                // Skip the command index directory
+                if entry.file_name() == lib_plugin_host::command_index::COMMANDS_DIR_NAME {
+                    continue;
+                }
+
                 let manifest_path = Self::find_plugin_toml_path(&plugin_dir);
                 if let Some(manifest_path) = manifest_path {
                     if let Ok(manifest) = PluginManifest::from_file(&manifest_path) {
@@ -423,7 +490,7 @@ impl PluginRuntime {
             }
         }
 
-        tracing::trace!(count = commands.len(), "CLI command discovery complete");
+        tracing::trace!(count = commands.len(), "Full scan discovery complete");
         commands
     }
 
@@ -469,9 +536,24 @@ impl PluginRuntime {
     }
 
     /// Find a plugin ID by command name or alias.
-    /// Returns the plugin_id if found.
+    /// Uses the command index for O(1) lookup, falls back to full discovery.
     pub fn find_plugin_by_command(&self, command: &str) -> Option<String> {
         tracing::trace!(command = %command, "Looking up plugin by command name or alias");
+
+        let plugins_dir = &self.config.plugins_dir;
+
+        // O(1) path: resolve single symlink
+        if let Some(manifest_path) =
+            lib_plugin_host::command_index::resolve_command(plugins_dir, command)
+        {
+            if let Ok(manifest) = PluginManifest::from_file(&manifest_path) {
+                tracing::trace!(command = %command, plugin_id = %manifest.plugin.id, "Found via command index");
+                return Some(manifest.plugin.id);
+            }
+        }
+
+        // Fallback: full discovery
+        tracing::trace!(command = %command, "Command index miss, falling back to full scan");
         let commands = self.discover_cli_commands();
         let result = commands
             .iter()
