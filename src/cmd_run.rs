@@ -3,10 +3,13 @@ use lib_console_output::{theme, blocks::{Columns, Section, Renderable}, out_info
 use lib_i18n_core::{t, LocalizedError};
 
 pub(crate) async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> anyhow::Result<()> {
+    tracing::trace!(plugin_id = ?plugin_id, args = ?args, "cmd_run invoked");
+
     let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
     runtime.load_all_plugins().await?;
 
     let runnable = runtime.list_runnable_plugins();
+    tracing::trace!(runnable_count = runnable.len(), "Loaded runnable plugins");
 
     let plugin_id = match plugin_id {
         Some(id) => id,
@@ -74,6 +77,7 @@ pub(crate) fn handle_cli_result(result_json: &str) {
 
     match serde_json::from_str::<CliResult>(result_json) {
         Ok(result) => {
+            tracing::trace!(exit_code = result.exit_code, stdout_len = result.stdout.len(), stderr_len = result.stderr.len(), "Handling CLI result");
             if !result.stdout.is_empty() {
                 print!("{}", result.stdout);
             }
@@ -84,7 +88,8 @@ pub(crate) fn handle_cli_result(result_json: &str) {
                 std::process::exit(result.exit_code);
             }
         }
-        Err(_) => {
+        Err(e) => {
+            tracing::trace!(error = %e, "Failed to parse CLI result JSON, printing raw");
             println!("{}", result_json);
         }
     }

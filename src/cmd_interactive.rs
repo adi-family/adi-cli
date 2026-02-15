@@ -1,4 +1,3 @@
-use cli::completions::CompletionShell;
 use cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
 use lib_console_output::input::{Confirm, Input, Select, SelectOption};
 use lib_i18n_core::t;
@@ -17,16 +16,14 @@ enum BuiltinCommand {
     SelfUpdate,
     Start,
     Plugin,
-    Search,
     Run,
-    Completions,
-    Init,
     Logs,
 }
 
 /// Show interactive command selection and prompt for arguments.
 /// Returns `None` if user cancels at any point.
 pub(crate) async fn select_command() -> Option<Commands> {
+    tracing::trace!("Entering interactive command selection");
     let mut options: Vec<SelectOption<CommandEntry>> = vec![
         SelectOption::new(
             t!("interactive-cmd-start"),
@@ -38,11 +35,6 @@ pub(crate) async fn select_command() -> Option<Commands> {
             CommandEntry::Builtin(BuiltinCommand::Plugin),
         )
         .with_description(t!("interactive-cmd-plugin-desc")),
-        SelectOption::new(
-            t!("interactive-cmd-search"),
-            CommandEntry::Builtin(BuiltinCommand::Search),
-        )
-        .with_description(t!("interactive-cmd-search-desc")),
         SelectOption::new(
             t!("interactive-cmd-run"),
             CommandEntry::Builtin(BuiltinCommand::Run),
@@ -58,21 +50,12 @@ pub(crate) async fn select_command() -> Option<Commands> {
             CommandEntry::Builtin(BuiltinCommand::SelfUpdate),
         )
         .with_description(t!("interactive-cmd-self-update-desc")),
-        SelectOption::new(
-            t!("interactive-cmd-completions"),
-            CommandEntry::Builtin(BuiltinCommand::Completions),
-        )
-        .with_description(t!("interactive-cmd-completions-desc")),
-        SelectOption::new(
-            t!("interactive-cmd-init"),
-            CommandEntry::Builtin(BuiltinCommand::Init),
-        )
-        .with_description(t!("interactive-cmd-init-desc")),
     ];
 
     // Discover plugin commands (fast, manifest-only)
     if let Ok(runtime) = PluginRuntime::new(RuntimeConfig::default()).await {
         let plugin_commands = runtime.discover_cli_commands();
+        tracing::trace!(count = plugin_commands.len(), "Discovered plugin commands for interactive menu");
         for cmd in plugin_commands {
             options.push(
                 SelectOption::new(
@@ -92,6 +75,11 @@ pub(crate) async fn select_command() -> Option<Commands> {
         .max_display(Some(15))
         .run()?;
 
+    match &entry {
+        CommandEntry::Builtin(_) => tracing::trace!("User selected builtin command"),
+        CommandEntry::Plugin { command } => tracing::trace!(command = %command, "User selected plugin command"),
+    }
+
     match entry {
         CommandEntry::Builtin(cmd) => prompt_builtin_args(cmd),
         CommandEntry::Plugin { command } => Some(Commands::External(vec![command])),
@@ -104,13 +92,10 @@ fn prompt_builtin_args(cmd: BuiltinCommand) -> Option<Commands> {
         BuiltinCommand::SelfUpdate => prompt_self_update(),
         BuiltinCommand::Start => prompt_start(),
         BuiltinCommand::Plugin => prompt_plugin(),
-        BuiltinCommand::Search => prompt_search(),
         BuiltinCommand::Run => Some(Commands::Run {
             plugin_id: None,
             args: vec![],
         }),
-        BuiltinCommand::Completions => prompt_completions(),
-        BuiltinCommand::Init => prompt_init(),
         BuiltinCommand::Logs => prompt_logs(),
     }
 }
@@ -200,21 +185,6 @@ fn prompt_plugin() -> Option<Commands> {
     }
 }
 
-fn prompt_search() -> Option<Commands> {
-    let query = Input::new(t!("interactive-search-query")).required().run()?;
-    Some(Commands::Search { query })
-}
-
-fn prompt_completions() -> Option<Commands> {
-    let shell = select_shell(t!("interactive-completions-shell"))?;
-    Some(Commands::Completions { shell })
-}
-
-fn prompt_init() -> Option<Commands> {
-    let shell = select_shell(t!("interactive-init-shell"));
-    Some(Commands::Init { shell })
-}
-
 fn prompt_logs() -> Option<Commands> {
     let plugin_id = Input::new(t!("interactive-logs-plugin-id"))
         .required()
@@ -236,16 +206,4 @@ fn prompt_logs() -> Option<Commands> {
         level: None,
         service: None,
     })
-}
-
-fn select_shell(prompt: String) -> Option<CompletionShell> {
-    Select::new(prompt)
-        .items([
-            ("Bash", CompletionShell::Bash),
-            ("Zsh", CompletionShell::Zsh),
-            ("Fish", CompletionShell::Fish),
-            ("PowerShell", CompletionShell::PowerShell),
-            ("Elvish", CompletionShell::Elvish),
-        ])
-        .run()
 }

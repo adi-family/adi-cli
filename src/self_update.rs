@@ -11,21 +11,27 @@ use crate::project_config::ProjectConfig;
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub async fn check_for_updates() -> Result<Option<String>> {
+    tracing::trace!(current = CURRENT_VERSION, "Checking for updates");
     let latest = fetch_latest_version().await?;
+    tracing::trace!(current = CURRENT_VERSION, latest = %latest, "Version check complete");
 
     if version_is_newer(&latest, CURRENT_VERSION) {
+        tracing::trace!(latest = %latest, "New version available");
         Ok(Some(latest))
     } else {
+        tracing::trace!("Already at latest version");
         Ok(None)
     }
 }
 
 pub async fn self_update(force: bool) -> Result<()> {
+    tracing::trace!(force = force, current = CURRENT_VERSION, "Starting self-update");
     println!("{}", theme::brand(t!("self-update-checking")));
 
     let latest_version = fetch_latest_version().await?;
 
     if !force && !version_is_newer(&latest_version, CURRENT_VERSION) {
+        tracing::trace!("No update needed");
         {
             let prefix = t!("common-checkmark");
             let msg = t!("self-update-already-latest", "version" => CURRENT_VERSION);
@@ -42,6 +48,7 @@ pub async fn self_update(force: bool) -> Result<()> {
 
     let current_exe = env::current_exe()?;
     let platform = detect_platform()?;
+    tracing::trace!(platform = %platform, exe = %current_exe.display(), "Detected platform");
 
     {
         let prefix = t!("common-arrow");
@@ -50,12 +57,15 @@ pub async fn self_update(force: bool) -> Result<()> {
     }
     let release = fetch_latest_release().await?;
     let asset = select_asset(&release, &platform)?;
+    tracing::trace!(asset = %asset.name, url = %asset.browser_download_url, "Selected release asset");
 
     let temp_dir = env::temp_dir().join("adi-update");
     fs::create_dir_all(&temp_dir)?;
 
     let archive_path = temp_dir.join(&asset.name);
+    tracing::trace!(dest = %archive_path.display(), "Downloading release archive");
     download_file(&asset.browser_download_url, &archive_path).await?;
+    tracing::trace!("Download complete");
 
     {
         let prefix = t!("common-arrow");
@@ -63,16 +73,19 @@ pub async fn self_update(force: bool) -> Result<()> {
         println!("{} {}", theme::brand(prefix), msg);
     }
     let binary_path = extract_binary(&archive_path, &temp_dir)?;
+    tracing::trace!(binary = %binary_path.display(), "Binary extracted");
 
     {
         let prefix = t!("common-arrow");
         let msg = t!("self-update-installing");
         println!("{} {}", theme::brand(prefix), msg);
     }
+    tracing::trace!(src = %binary_path.display(), dest = %current_exe.display(), "Replacing binary");
     replace_binary(&binary_path, &current_exe)?;
 
     // Cleanup
     let _ = fs::remove_dir_all(&temp_dir);
+    tracing::trace!("Temp directory cleaned up");
 
     {
         let prefix = t!("common-checkmark");
@@ -80,16 +93,20 @@ pub async fn self_update(force: bool) -> Result<()> {
         println!("{} {}", theme::success(prefix), msg);
     }
 
+    tracing::trace!(version = %latest_version, "Self-update complete");
     Ok(())
 }
 
 async fn fetch_latest_version() -> Result<String> {
+    tracing::trace!("Fetching latest version from GitHub");
     let release = fetch_latest_release().await?;
     let version = release.tag_name.trim_start_matches("cli-v").to_string();
+    tracing::trace!(tag = %release.tag_name, version = %version, "Parsed latest version");
     Ok(version)
 }
 
 fn build_github_client() -> Result<Client> {
+    tracing::trace!("Building GitHub API client");
     Client::builder()
         .user_agent("adi-installer")
         .auth(no_auth())
@@ -100,12 +117,15 @@ fn build_github_client() -> Result<Client> {
 async fn fetch_latest_release() -> Result<Release> {
     let config = ProjectConfig::get();
     let (repo_owner, repo_name) = config.parse_repository();
+    tracing::trace!(owner = %repo_owner, repo = %repo_name, "Fetching releases from GitHub");
 
     let client = build_github_client()?;
     let releases = client
         .list_releases(repo_owner, repo_name)
         .await
         .map_err(|e| anyhow!("Failed to fetch releases: {}", e))?;
+
+    tracing::trace!(count = releases.len(), "Fetched releases");
 
     // Filter for CLI manager releases only
     // Priority: cli-v* (new format), fallback to v* without component prefix (legacy)
@@ -125,6 +145,7 @@ async fn fetch_latest_release() -> Result<Release> {
         .ok_or_else(|| anyhow!(t!("self-update-error-no-release")))?
         .clone();
 
+    tracing::trace!(tag = %cli_release.tag_name, "Selected CLI release");
     Ok(cli_release)
 }
 
@@ -147,10 +168,13 @@ fn detect_platform() -> Result<String> {
         return Err(anyhow!(t!("self-update-error-arch")));
     };
 
-    Ok(format!("{}-{}", arch, os))
+    let platform = format!("{}-{}", arch, os);
+    tracing::trace!(platform = %platform, "Detected platform");
+    Ok(platform)
 }
 
 fn select_asset<'a>(release: &'a Release, platform: &str) -> Result<&'a ReleaseAsset> {
+    tracing::trace!(platform = %platform, assets = release.assets.len(), "Selecting asset for platform");
     release
         .assets
         .iter()
@@ -159,8 +183,10 @@ fn select_asset<'a>(release: &'a Release, platform: &str) -> Result<&'a ReleaseA
 }
 
 async fn download_file(url: &str, dest: &Path) -> Result<()> {
+    tracing::trace!(url = %url, dest = %dest.display(), "Downloading file");
     let response = reqwest::get(url).await?;
     let bytes = response.bytes().await?;
+    tracing::trace!(bytes = bytes.len(), "Downloaded, writing to disk");
     fs::write(dest, bytes)?;
     Ok(())
 }
@@ -168,9 +194,11 @@ async fn download_file(url: &str, dest: &Path) -> Result<()> {
 fn extract_binary(archive_path: &Path, temp_dir: &Path) -> Result<PathBuf> {
     let binary_name = if cfg!(windows) { "adi.exe" } else { "adi" };
     let binary_path = temp_dir.join(binary_name);
+    tracing::trace!(archive = %archive_path.display(), binary_name = %binary_name, "Extracting binary from archive");
 
     if archive_path.extension().and_then(|s| s.to_str()) == Some("zip") {
         // Windows zip extraction
+        tracing::trace!("Using zip extraction");
         use std::io::Read;
         use zip::ZipArchive;
 
@@ -183,11 +211,13 @@ fn extract_binary(archive_path: &Path, temp_dir: &Path) -> Result<PathBuf> {
                 let mut buffer = Vec::new();
                 file.read_to_end(&mut buffer)?;
                 fs::write(&binary_path, buffer)?;
+                tracing::trace!("Binary extracted from zip");
                 break;
             }
         }
     } else {
         // Unix tar.gz extraction
+        tracing::trace!("Using tar.gz extraction");
         use flate2::read::GzDecoder;
         use std::io::Read;
         use tar::Archive;
@@ -204,6 +234,7 @@ fn extract_binary(archive_path: &Path, temp_dir: &Path) -> Result<PathBuf> {
                 let mut buffer = Vec::new();
                 entry.read_to_end(&mut buffer)?;
                 fs::write(&binary_path, buffer)?;
+                tracing::trace!("Binary extracted from tar.gz");
                 break;
             }
         }
@@ -215,22 +246,27 @@ fn extract_binary(archive_path: &Path, temp_dir: &Path) -> Result<PathBuf> {
         let mut perms = fs::metadata(&binary_path)?.permissions();
         perms.set_mode(0o755);
         fs::set_permissions(&binary_path, perms)?;
+        tracing::trace!("Set binary permissions to 0o755");
     }
 
     Ok(binary_path)
 }
 
 fn replace_binary(new_binary: &PathBuf, current_exe: &PathBuf) -> Result<()> {
+    tracing::trace!(src = %new_binary.display(), dest = %current_exe.display(), "Replacing binary");
+
     #[cfg(unix)]
     {
         // On Unix, we can replace the running binary
         fs::copy(new_binary, current_exe)?;
-        
+        tracing::trace!("Binary copied");
+
         // On macOS, re-sign the binary with ad-hoc signature
         // This is required because the binary loses its signature when extracted
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
+            tracing::trace!("Re-signing binary with ad-hoc signature (macOS)");
             // Remove any existing signature first
             let _ = Command::new("codesign")
                 .args(["--remove-signature", current_exe.to_str().unwrap_or("")])
@@ -239,8 +275,9 @@ fn replace_binary(new_binary: &PathBuf, current_exe: &PathBuf) -> Result<()> {
             let _ = Command::new("codesign")
                 .args(["-s", "-", current_exe.to_str().unwrap_or("")])
                 .output();
+            tracing::trace!("Binary re-signed");
         }
-        
+
         Ok(())
     }
 
@@ -249,6 +286,7 @@ fn replace_binary(new_binary: &PathBuf, current_exe: &PathBuf) -> Result<()> {
         // On Windows, we need to use a different approach
         // Move current exe to .old, copy new binary, schedule deletion
         let old_exe = current_exe.with_extension("exe.old");
+        tracing::trace!(old = %old_exe.display(), "Windows binary replacement");
 
         if old_exe.exists() {
             let _ = fs::remove_file(&old_exe);

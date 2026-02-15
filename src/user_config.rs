@@ -20,8 +20,10 @@ impl UserConfig {
     /// Load user config from disk, returns default if file doesn't exist
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;
+        tracing::trace!(path = %path.display(), "Loading user config");
 
         if !path.exists() {
+            tracing::trace!("Config file does not exist, using defaults");
             return Ok(Self::default());
         }
 
@@ -31,12 +33,14 @@ impl UserConfig {
         let config: Self = toml::from_str(&content)
             .with_context(|| format!("Failed to parse config from {}", path.display()))?;
 
+        tracing::trace!(language = ?config.language, theme = ?config.theme, "User config loaded");
         Ok(config)
     }
 
     /// Save user config to disk
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path()?;
+        tracing::trace!(path = %path.display(), "Saving user config");
 
         // Create parent directory if it doesn't exist
         if let Some(parent) = path.parent() {
@@ -50,13 +54,16 @@ impl UserConfig {
         fs::write(&path, content)
             .with_context(|| format!("Failed to write config to {}", path.display()))?;
 
+        tracing::trace!("User config saved");
         Ok(())
     }
 
     /// Check if this is the first run (config file doesn't exist)
     pub fn is_first_run() -> Result<bool> {
         let path = Self::config_path()?;
-        Ok(!path.exists())
+        let first_run = !path.exists();
+        tracing::trace!(first_run = first_run, "Checking first run status");
+        Ok(first_run)
     }
 
     /// Check if we're in an interactive session (TTY)

@@ -3,11 +3,13 @@ use lib_console_output::{theme, blocks::{Columns, Section, Renderable}, out_info
 use lib_i18n_core::t;
 
 pub(crate) async fn cmd_search(query: &str) -> anyhow::Result<()> {
+    tracing::trace!(query = %query, "cmd_search invoked");
     let manager = PluginManager::new();
 
     out_info!("{}", t!("search-searching", "query" => query));
 
     let results = manager.search(query).await?;
+    tracing::trace!(packages = results.packages.len(), plugins = results.plugins.len(), "Search results received");
 
     if results.packages.is_empty() && results.plugins.is_empty() {
         out_info!("{}", t!("search-no-results"));

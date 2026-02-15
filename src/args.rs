@@ -1,4 +1,3 @@
-use cli::completions::CompletionShell;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -36,12 +35,6 @@ pub(crate) enum Commands {
         command: PluginCommands,
     },
 
-    /// Search for plugins and packages in the registry
-    Search {
-        /// Search query
-        query: String,
-    },
-
     /// Run a plugin's CLI interface
     Run {
         /// Plugin ID to run (shows available plugins if omitted)
@@ -50,20 +43,6 @@ pub(crate) enum Commands {
         /// Arguments to pass to the plugin
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
-    },
-
-    /// Generate shell completions
-    Completions {
-        /// Shell to generate completions for
-        #[arg(value_enum)]
-        shell: CompletionShell,
-    },
-
-    /// Initialize shell completions (writes to shell config)
-    Init {
-        /// Shell to initialize (auto-detects if not specified)
-        #[arg(value_enum)]
-        shell: Option<CompletionShell>,
     },
 
     /// Stream live logs from a plugin

@@ -9,6 +9,8 @@ pub(crate) async fn cmd_logs(
     level: Option<String>,
     service: Option<String>,
 ) -> anyhow::Result<()> {
+    tracing::trace!(plugin_id = %plugin_id, follow = follow, lines = lines, level = ?level, service = ?service, "cmd_logs invoked");
+
     let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
 
     if let Err(e) = runtime.scan_and_load_plugin(plugin_id).await {
@@ -16,9 +18,14 @@ pub(crate) async fn cmd_logs(
         std::process::exit(1);
     }
 
+    tracing::trace!(plugin_id = %plugin_id, "Requesting log provider");
     let log_provider = match runtime.get_log_provider(plugin_id) {
-        Some(p) => p,
+        Some(p) => {
+            tracing::trace!("Log provider acquired");
+            p
+        }
         None => {
+            tracing::trace!("Plugin does not provide log streaming");
             out_error!("Plugin {} does not provide log streaming.", theme::brand(plugin_id));
             std::process::exit(1);
         }
@@ -31,9 +38,11 @@ pub(crate) async fn cmd_logs(
         follow,
     };
 
+    tracing::trace!("Creating log stream");
     let mut stream = log_provider.log_stream(ctx).await.map_err(|e| {
         anyhow::anyhow!("Failed to create log stream: {}", e)
     })?;
+    tracing::trace!("Log stream created, reading entries");
 
     while let Some(line) = stream.next().await {
         let level_colored = match line.level.as_str() {

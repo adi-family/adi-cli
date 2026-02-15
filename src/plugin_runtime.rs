@@ -69,11 +69,14 @@ impl PluginRuntime {
     /// Create a new plugin runtime with the given configuration.
     #[allow(clippy::arc_with_non_send_sync)]
     pub async fn new(config: RuntimeConfig) -> Result<Self> {
+        tracing::trace!(plugins_dir = %config.plugins_dir.display(), cache_dir = %config.cache_dir.display(), "Creating plugin runtime");
+
         // Ensure directories exist
         std::fs::create_dir_all(&config.plugins_dir)?;
         std::fs::create_dir_all(&config.cache_dir)?;
 
         let manager_v3 = PluginManagerV3::new();
+        tracing::trace!("Plugin manager v3 initialized");
 
         Ok(Self {
             manager_v3: Arc::new(RwLock::new(manager_v3)),
@@ -96,8 +99,11 @@ impl PluginRuntime {
         // Scan plugins directory for installed plugins
         let plugins_dir = &self.config.plugins_dir;
         if !plugins_dir.exists() {
+            tracing::trace!(dir = %plugins_dir.display(), "Plugins directory does not exist, skipping load");
             return Ok(());
         }
+
+        tracing::trace!(dir = %plugins_dir.display(), "Scanning plugins directory");
 
         let mut plugin_ids = Vec::new();
         if let Ok(entries) = std::fs::read_dir(plugins_dir) {
@@ -111,7 +117,10 @@ impl PluginRuntime {
             }
         }
 
+        tracing::trace!(count = plugin_ids.len(), "Discovered plugin directories");
+
         for plugin_id in plugin_ids {
+            tracing::trace!(plugin_id = %plugin_id, "Loading plugin");
             if let Err(e) = self.load_plugin_internal(&plugin_id).await {
                 tracing::warn!("Failed to enable plugin {}: {}", plugin_id, e);
             }
@@ -122,8 +131,12 @@ impl PluginRuntime {
 
     /// Internal method to load a plugin
     async fn load_plugin_internal(&self, plugin_id: &str) -> Result<()> {
+        tracing::trace!(plugin_id = %plugin_id, "Finding plugin manifest");
+
         // Find the plugin manifest
         let manifest = self.find_plugin_manifest(plugin_id)?;
+
+        tracing::trace!(plugin_id = %plugin_id, version = %manifest.plugin.version, "Manifest found, loading v3 plugin");
 
         // All plugins use v3 ABI
         self.load_v3_plugin(&manifest).await
@@ -132,6 +145,7 @@ impl PluginRuntime {
     /// Load a v3 plugin
     async fn load_v3_plugin(&self, manifest: &PluginManifest) -> Result<()> {
         let plugin_dir = self.resolve_plugin_dir(&manifest.plugin.id)?;
+        tracing::trace!(plugin_id = %manifest.plugin.id, dir = %plugin_dir.display(), "Loading v3 plugin binary");
 
         match LoadedPluginV3::load(manifest.clone(), &plugin_dir).await {
             Ok(loaded) => {
@@ -156,11 +170,14 @@ impl PluginRuntime {
     /// Find plugin manifest by ID
     fn find_plugin_manifest(&self, plugin_id: &str) -> Result<PluginManifest> {
         let plugin_dir = self.config.plugins_dir.join(plugin_id);
+        tracing::trace!(plugin_id = %plugin_id, dir = %plugin_dir.display(), "Searching for plugin manifest");
 
         if let Some(manifest_path) = Self::find_plugin_toml_path(&plugin_dir) {
+            tracing::trace!(path = %manifest_path.display(), "Found plugin manifest");
             PluginManifest::from_file(&manifest_path)
                 .map_err(|e| crate::error::InstallerError::Other(e.to_string()))
         } else {
+            tracing::trace!(plugin_id = %plugin_id, "Plugin manifest not found");
             Err(crate::error::InstallerError::PluginNotFound {
                 id: plugin_id.to_string(),
             })
@@ -178,23 +195,27 @@ impl PluginRuntime {
                 let version = version.trim();
                 let versioned_dir = plugin_dir.join(version);
                 if versioned_dir.exists() {
+                    tracing::trace!(plugin_id = %plugin_id, version = %version, dir = %versioned_dir.display(), "Resolved versioned plugin directory");
                     return Ok(versioned_dir);
                 }
             }
         }
 
         // Fallback to plugin_dir itself
+        tracing::trace!(plugin_id = %plugin_id, dir = %plugin_dir.display(), "Using plugin directory directly (no version file)");
         Ok(plugin_dir)
     }
 
     /// Load a specific plugin by ID.
     pub async fn load_plugin(&self, plugin_id: &str) -> Result<()> {
+        tracing::trace!(plugin_id = %plugin_id, "Loading single plugin");
         self.load_plugin_internal(plugin_id).await
     }
 
     /// Scan installed plugins and load a specific plugin by ID.
     /// This is useful when you only want to load one plugin without loading all.
     pub async fn scan_and_load_plugin(&self, plugin_id: &str) -> Result<()> {
+        tracing::trace!(plugin_id = %plugin_id, "Scan-and-load single plugin");
         // Load the specific plugin
         self.load_plugin_internal(plugin_id).await
     }
@@ -239,6 +260,8 @@ impl PluginRuntime {
 
     /// Run a CLI command for a specific plugin. Returns result string.
     pub async fn run_cli_command(&self, plugin_id: &str, context_json: &str) -> Result<String> {
+        tracing::trace!(plugin_id = %plugin_id, "Running CLI command");
+
         let manager = self.manager_v3.read().unwrap();
         let plugin = manager
             .get_cli_commands(plugin_id)
@@ -248,12 +271,15 @@ impl PluginRuntime {
 
         // Parse context and call async method
         let ctx = self.parse_cli_context(context_json)?;
+        tracing::trace!(plugin_id = %plugin_id, command = %ctx.command, subcommand = ?ctx.subcommand, args = ?ctx.args, "Dispatching command to plugin");
         drop(manager); // Release lock before async call
 
         let result = plugin
             .run_command(&ctx)
             .await
             .map_err(|e| crate::error::InstallerError::Other(e.to_string()))?;
+
+        tracing::trace!(plugin_id = %plugin_id, exit_code = result.exit_code, "Plugin command completed");
 
         // Format result as JSON for compatibility
         Ok(serde_json::to_string(&serde_json::json!({
@@ -363,11 +389,14 @@ impl PluginRuntime {
     ///
     /// Returns a list of CLI commands with their plugin IDs, descriptions, and aliases.
     pub fn discover_cli_commands(&self) -> Vec<PluginCliCommand> {
+        tracing::trace!("Discovering CLI commands from plugin manifests");
+
         let mut commands = Vec::new();
 
         // Scan plugins directory for plugin.toml files
         let plugins_dir = &self.config.plugins_dir;
         if !plugins_dir.exists() {
+            tracing::trace!(dir = %plugins_dir.display(), "Plugins directory does not exist, no commands to discover");
             return commands;
         }
 
@@ -385,6 +414,7 @@ impl PluginRuntime {
                 if let Some(manifest_path) = manifest_path {
                     if let Ok(manifest) = PluginManifest::from_file(&manifest_path) {
                         if let Some(cli) = &manifest.cli {
+                            tracing::trace!(command = %cli.command, plugin_id = %manifest.plugin.id, aliases = ?cli.aliases, "Discovered CLI command");
                             commands.push(PluginCliCommand {
                                 command: cli.command.clone(),
                                 plugin_id: manifest.plugin.id.clone(),
@@ -397,6 +427,7 @@ impl PluginRuntime {
             }
         }
 
+        tracing::trace!(count = commands.len(), "CLI command discovery complete");
         commands
     }
 
@@ -410,6 +441,7 @@ impl PluginRuntime {
                 let version = version.trim();
                 let versioned_manifest = plugin_dir.join(version).join("plugin.toml");
                 if versioned_manifest.exists() {
+                    tracing::trace!(path = %versioned_manifest.display(), "Found versioned plugin.toml");
                     return Some(versioned_manifest);
                 }
             }
@@ -418,6 +450,7 @@ impl PluginRuntime {
         // Fallback: check for plugin.toml directly in plugin dir
         let direct_manifest = plugin_dir.join("plugin.toml");
         if direct_manifest.exists() {
+            tracing::trace!(path = %direct_manifest.display(), "Found direct plugin.toml");
             return Some(direct_manifest);
         }
 
@@ -428,23 +461,28 @@ impl PluginRuntime {
                 if subdir.is_dir() {
                     let manifest = subdir.join("plugin.toml");
                     if manifest.exists() {
+                        tracing::trace!(path = %manifest.display(), "Found plugin.toml in subdirectory");
                         return Some(manifest);
                     }
                 }
             }
         }
 
+        tracing::trace!(dir = %plugin_dir.display(), "No plugin.toml found");
         None
     }
 
     /// Find a plugin ID by command name or alias.
     /// Returns the plugin_id if found.
     pub fn find_plugin_by_command(&self, command: &str) -> Option<String> {
+        tracing::trace!(command = %command, "Looking up plugin by command name or alias");
         let commands = self.discover_cli_commands();
-        commands
+        let result = commands
             .iter()
             .find(|c| c.command == command || c.aliases.contains(&command.to_string()))
-            .map(|c| c.plugin_id.clone())
+            .map(|c| c.plugin_id.clone());
+        tracing::trace!(command = %command, found = ?result, "Plugin lookup result");
+        result
     }
 }
 

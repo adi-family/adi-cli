@@ -6,6 +6,8 @@ use lib_i18n_core::{t, LocalizedError};
 use crate::cmd_run::handle_cli_result;
 
 pub(crate) async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
+    tracing::trace!(args = ?args, "Handling external plugin command");
+
     if args.is_empty() {
         out_error!("{} {}", t!("common-error-prefix"), t!("external-error-no-command"));
         std::process::exit(1);
@@ -13,6 +15,7 @@ pub(crate) async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
 
     let command = args[0].clone();
     let cmd_args: Vec<String> = args.into_iter().skip(1).collect();
+    tracing::trace!(command = %command, cmd_args = ?cmd_args, "Parsed external command");
 
     let mut runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
 
@@ -24,8 +27,10 @@ pub(crate) async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
         .find(|c| c.command == command || c.aliases.contains(&command));
 
     let plugin_id = if let Some(plugin_cmd) = matching_plugin {
+        tracing::trace!(plugin_id = %plugin_cmd.plugin_id, "Found matching plugin for command");
         plugin_cmd.plugin_id.clone()
     } else {
+        tracing::trace!(command = %command, "No installed plugin found, trying auto-install");
         match try_autoinstall_plugin(&command, &cli_commands).await {
             AutoinstallResult::Installed(id) => {
                 runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
@@ -87,11 +92,13 @@ async fn try_autoinstall_plugin(
     let auto_install_disabled = cli::clienv::auto_install_disabled();
 
     let plugin_id = format!("adi.cli.{}", command);
+    tracing::trace!(command = %command, plugin_id = %plugin_id, auto_install_disabled = auto_install_disabled, "Attempting auto-install");
 
     let manager = PluginManager::new();
 
     match manager.get_plugin_info(&plugin_id).await {
         Ok(Some(_info)) => {
+            tracing::trace!(plugin_id = %plugin_id, "Plugin found in registry");
             out_info!("{}", t!("external-autoinstall-found", "id" => &plugin_id, "command" => command));
 
             if auto_install_disabled {

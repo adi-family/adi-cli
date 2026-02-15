@@ -7,13 +7,16 @@ use lib_i18n_core::{t, LocalizedError};
 use crate::args::{Cli, PluginCommands};
 
 pub(crate) async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
+    tracing::trace!("cmd_plugin invoked");
     let manager = PluginManager::new();
 
     match command {
         PluginCommands::Search { query } => {
+            tracing::trace!(query = %query, "Searching plugins");
             crate::cmd_search::cmd_search(&query).await?;
         }
         PluginCommands::List => {
+            tracing::trace!("Listing available plugins");
             Section::new(t!("plugin-list-title")).print();
 
             let plugins = manager.list_plugins().await?;
@@ -42,6 +45,7 @@ pub(crate) async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             }
         }
         PluginCommands::Installed => {
+            tracing::trace!("Listing installed plugins");
             Section::new(t!("plugin-installed-title")).print();
 
             let installed = manager.list_installed().await?;
@@ -61,16 +65,19 @@ pub(crate) async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             cols.print();
         }
         PluginCommands::Install { plugin_id, version } => {
+            tracing::trace!(plugin_id = %plugin_id, version = ?version, "Installing plugin");
             manager
                 .install_plugins_matching(&plugin_id, version.as_deref())
                 .await?;
             regenerate_completions_quiet();
         }
         PluginCommands::Update { plugin_id } => {
+            tracing::trace!(plugin_id = %plugin_id, "Updating plugin");
             manager.update_plugin(&plugin_id).await?;
             regenerate_completions_quiet();
         }
         PluginCommands::UpdateAll => {
+            tracing::trace!("Updating all plugins");
             let installed = manager.list_installed().await?;
 
             if installed.is_empty() {
@@ -90,6 +97,7 @@ pub(crate) async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             regenerate_completions_quiet();
         }
         PluginCommands::Uninstall { plugin_id } => {
+            tracing::trace!(plugin_id = %plugin_id, "Uninstalling plugin");
             let confirmed = Confirm::with_theme(&ColorfulTheme::default())
                 .with_prompt(t!("plugin-uninstall-prompt", "id" => &plugin_id))
                 .default(false)
@@ -104,6 +112,7 @@ pub(crate) async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             regenerate_completions_quiet();
         }
         PluginCommands::Path { plugin_id } => {
+            tracing::trace!(plugin_id = %plugin_id, "Resolving plugin path");
             let plugin_dir = manager.plugin_path(&plugin_id);
             let version_file = plugin_dir.join(".version");
 

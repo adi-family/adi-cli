@@ -41,6 +41,7 @@ impl From<CompletionShell> for Shell {
 /// This builds a clap Command that includes both static commands
 /// and plugin-provided commands discovered from manifests.
 pub fn generate_completions<C: CommandFactory>(shell: CompletionShell, bin_name: &str) {
+    tracing::trace!(shell = ?shell, bin_name = %bin_name, "Generating shell completions");
     let mut cmd = C::command();
 
     // Add plugin commands by reading manifests directly (no async needed)
@@ -138,9 +139,11 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
         .join("plugins");
 
     if !plugins_dir.exists() {
+        tracing::trace!(dir = %plugins_dir.display(), "Plugins dir does not exist, skipping manifest scan");
         return cmd;
     }
 
+    tracing::trace!(dir = %plugins_dir.display(), "Scanning plugin manifests for completions");
     let mut dynamic_plugins = Vec::new();
 
     // Scan plugins directory for plugin.toml files
@@ -175,12 +178,15 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
                             dynamic_plugins.push(cli.command.clone());
                         }
 
+                        tracing::trace!(command = %name, "Added plugin command to completions");
                         cmd = cmd.subcommand(subcmd);
                     }
                 }
             }
         }
     }
+
+    tracing::trace!(dynamic_count = dynamic_plugins.len(), "Plugin manifest scan complete");
 
     // Store dynamic completion plugins for later use
     let _ = DYNAMIC_COMPLETION_PLUGINS.set(dynamic_plugins);
@@ -291,6 +297,7 @@ pub fn init_completions<C: CommandFactory>(
     shell: CompletionShell,
     bin_name: &str,
 ) -> anyhow::Result<PathBuf> {
+    tracing::trace!(shell = ?shell, bin_name = %bin_name, "Initializing shell completions");
     let completions_dir = get_completions_dir(shell)
         .ok_or_else(|| anyhow::anyhow!("Could not determine completions directory"))?;
 
@@ -643,6 +650,7 @@ fn add_to_shell_config(shell: CompletionShell, snippet: &str) -> anyhow::Result<
 
 /// Regenerate completions (called after plugin install/uninstall).
 pub fn regenerate_completions<C: CommandFactory>(bin_name: &str) -> anyhow::Result<()> {
+    tracing::trace!(bin_name = %bin_name, "Regenerating completions for installed shells");
     // Try to regenerate for all shells that have completions installed
     for shell in [
         CompletionShell::Bash,
@@ -652,6 +660,7 @@ pub fn regenerate_completions<C: CommandFactory>(bin_name: &str) -> anyhow::Resu
         if let Some(dir) = get_completions_dir(shell) {
             let file_path = dir.join(get_completion_filename(shell, bin_name));
             if file_path.exists() {
+                tracing::trace!(shell = ?shell, path = %file_path.display(), "Regenerating completion file");
                 // Regenerate this completion file
                 let file = std::fs::File::create(&file_path)?;
                 let mut cmd = C::command();
@@ -671,6 +680,7 @@ pub fn regenerate_completions<C: CommandFactory>(bin_name: &str) -> anyhow::Resu
 /// Detect the current shell from environment.
 pub fn detect_shell() -> Option<CompletionShell> {
     std::env::var("SHELL").ok().and_then(|s| {
+        tracing::trace!(shell_env = %s, "Detecting shell from $SHELL");
         if s.contains("zsh") {
             Some(CompletionShell::Zsh)
         } else if s.contains("bash") {
@@ -691,10 +701,12 @@ pub fn detect_shell() -> Option<CompletionShell> {
 /// This is idempotent and optimized - only regenerates when plugins change.
 pub fn ensure_completions_installed<C: CommandFactory>(bin_name: &str) {
     let Some(shell) = detect_shell() else {
+        tracing::trace!("Could not detect shell, skipping completions");
         return;
     };
 
     let Some(completions_dir) = get_completions_dir(shell) else {
+        tracing::trace!(shell = ?shell, "Could not determine completions directory");
         return;
     };
 
@@ -706,8 +718,11 @@ pub fn ensure_completions_installed<C: CommandFactory>(bin_name: &str) {
     let needs_regenerate = needs_shell_config || completions_outdated(&completion_file);
 
     if !needs_regenerate {
+        tracing::trace!(shell = ?shell, "Completions are up-to-date");
         return;
     }
+
+    tracing::trace!(shell = ?shell, needs_shell_config = needs_shell_config, "Regenerating completions");
 
     // Create completions directory
     if std::fs::create_dir_all(&completions_dir).is_err() {

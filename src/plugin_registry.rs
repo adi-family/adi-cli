@@ -37,6 +37,8 @@ impl PluginManager {
             .join("adi")
             .join("plugins");
 
+        tracing::trace!(registry_url = %registry_url, cache_dir = %cache_dir.display(), install_dir = %install_dir.display(), "Creating PluginManager");
+
         let installer = PluginInstaller::new(&registry_url, install_dir, cache_dir);
 
         Self { installer }
@@ -53,6 +55,8 @@ impl PluginManager {
             .join("adi")
             .join("plugins");
 
+        tracing::trace!(registry_url = %url, "Creating PluginManager with custom registry URL");
+
         let installer = PluginInstaller::new(url, install_dir, cache_dir);
 
         Self { installer }
@@ -61,29 +65,50 @@ impl PluginManager {
     // -- Delegated registry operations --
 
     pub async fn search(&self, query: &str) -> Result<SearchResults> {
-        Ok(self.installer.search(query).await?)
+        tracing::trace!(query = %query, "Searching plugin registry");
+        let results = self.installer.search(query).await?;
+        tracing::trace!(packages = results.packages.len(), plugins = results.plugins.len(), "Search complete");
+        Ok(results)
     }
 
     pub async fn list_plugins(&self) -> Result<Vec<PluginEntry>> {
-        Ok(self.installer.list_available().await?)
+        tracing::trace!("Listing available plugins from registry");
+        let plugins = self.installer.list_available().await?;
+        tracing::trace!(count = plugins.len(), "Available plugins fetched");
+        Ok(plugins)
     }
 
     pub async fn get_plugin_info(&self, id: &str) -> Result<Option<PluginInfo>> {
-        Ok(self.installer.get_plugin_info(id).await?)
+        tracing::trace!(id = %id, "Fetching plugin info from registry");
+        let info = self.installer.get_plugin_info(id).await?;
+        tracing::trace!(id = %id, found = info.is_some(), "Plugin info result");
+        Ok(info)
     }
 
     pub async fn list_installed(&self) -> Result<Vec<(String, String)>> {
-        Ok(self.installer.list_installed().await?)
+        tracing::trace!("Listing installed plugins");
+        let installed = self.installer.list_installed().await?;
+        tracing::trace!(count = installed.len(), "Installed plugins listed");
+        Ok(installed)
+    }
+
+    pub fn is_installed(&self, id: &str) -> Option<String> {
+        let result = self.installer.is_installed(id);
+        tracing::trace!(id = %id, installed = ?result, "Checking if plugin is installed");
+        result
     }
 
     pub fn plugin_path(&self, id: &str) -> PathBuf {
-        self.installer.plugin_path(id)
+        let path = self.installer.plugin_path(id);
+        tracing::trace!(id = %id, path = %path.display(), "Resolved plugin path");
+        path
     }
 
     // -- Install with UI --
 
     pub async fn install_plugin(&self, id: &str, version: Option<&str>) -> Result<()> {
         let platform = lib_plugin_manifest::current_platform();
+        tracing::trace!(id = %id, version = ?version, platform = %platform, "Installing plugin");
 
         // Fetch info for pre-download message and progress bar sizing
         let info = self.installer.get_plugin_info(id).await?;
@@ -128,6 +153,7 @@ impl PluginManager {
             .await?;
 
         pb.finish_with_message("downloaded");
+        tracing::trace!(id = %id, version = %result.version, path = %result.path.display(), "Plugin downloaded and extracted");
 
         println!(
             "{}",
@@ -145,6 +171,7 @@ impl PluginManager {
 
     /// Install a plugin and all its dependencies with UI feedback.
     pub async fn install_with_dependencies(&self, id: &str, version: Option<&str>) -> Result<()> {
+        tracing::trace!(id = %id, version = ?version, "Installing plugin with dependencies");
         let mut installing = HashSet::new();
 
         // Check if already installed — provide user feedback
@@ -168,11 +195,13 @@ impl PluginManager {
         installing: &mut HashSet<String>,
     ) -> Result<()> {
         if installing.contains(id) {
+            tracing::trace!(id = %id, "Skipping already-in-progress plugin install");
             return Ok(());
         }
         installing.insert(id.to_string());
 
         if self.installer.is_installed(id).is_some() {
+            tracing::trace!(id = %id, "Plugin already installed, skipping");
             return Ok(());
         }
 
@@ -181,6 +210,7 @@ impl PluginManager {
 
         // Check dependencies using the library
         let deps = self.installer.get_dependencies(id);
+        tracing::trace!(id = %id, deps = ?deps, "Checking plugin dependencies");
         for dep in deps {
             if !installing.contains(&dep) {
                 println!("{}", t!("plugin-install-dependency", "id" => &dep));
@@ -194,9 +224,11 @@ impl PluginManager {
     // -- Uninstall with UI --
 
     pub async fn uninstall_plugin(&self, id: &str) -> Result<()> {
+        tracing::trace!(id = %id, "Uninstalling plugin");
         println!("{}", t!("plugin-uninstall-progress", "id" => id));
 
         self.installer.uninstall(id).await?;
+        tracing::trace!(id = %id, "Plugin uninstalled successfully");
 
         {
             let prefix = t!("common-success-prefix");
@@ -210,13 +242,16 @@ impl PluginManager {
     // -- Update with UI --
 
     pub async fn update_plugin(&self, id: &str) -> Result<()> {
+        tracing::trace!(id = %id, "Checking for plugin update");
         match self.installer.check_update(id).await? {
             UpdateCheck::AlreadyLatest { version } => {
+                tracing::trace!(id = %id, version = %version, "Plugin is already at latest version");
                 let prefix = t!("common-info-prefix");
                 let msg = t!("plugin-update-already-latest", "id" => id, "version" => &version);
                 println!("{} {}", theme::brand(prefix), msg);
             }
             UpdateCheck::Available { current, latest } => {
+                tracing::trace!(id = %id, current = %current, latest = %latest, "Plugin update available");
                 println!(
                     "{}",
                     t!("plugin-update-available",
@@ -243,8 +278,11 @@ impl PluginManager {
         version: Option<&str>,
     ) -> Result<()> {
         if !is_glob_pattern(pattern) {
+            tracing::trace!(id = %pattern, "Not a glob pattern, installing single plugin");
             return self.install_with_dependencies(pattern, version).await;
         }
+
+        tracing::trace!(pattern = %pattern, "Installing plugins matching glob pattern");
 
         println!(
             "{}",
