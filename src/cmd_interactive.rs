@@ -51,7 +51,6 @@ pub(crate) async fn select_command() -> Option<Commands> {
         )
         .with_description(t!("interactive-cmd-self-update-desc")),
     ];
-
     // Discover plugin commands (fast, manifest-only)
     if let Ok(runtime) = PluginRuntime::new(RuntimeConfig::default()).await {
         let plugin_commands = runtime.discover_cli_commands();
