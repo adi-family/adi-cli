@@ -42,12 +42,6 @@ pub(crate) enum Commands {
         query: String,
     },
 
-    /// Debug and diagnostic commands
-    Debug {
-        #[command(subcommand)]
-        command: DebugCommands,
-    },
-
     /// Run a plugin's CLI interface
     Run {
         /// Plugin ID to run (shows available plugins if omitted)
@@ -143,10 +137,4 @@ pub(crate) enum PluginCommands {
         /// Plugin ID
         plugin_id: String,
     },
-}
-
-#[derive(Subcommand)]
-pub(crate) enum DebugCommands {
-    /// List registered services from loaded plugins
-    Services,
 }

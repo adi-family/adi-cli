@@ -3,7 +3,7 @@ use cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
 use lib_console_output::input::{Confirm, Input, Select, SelectOption};
 use lib_i18n_core::t;
 
-use crate::args::{Commands, DebugCommands, PluginCommands};
+use crate::args::{Commands, PluginCommands};
 
 /// Represents a selectable command entry in the interactive menu.
 #[derive(Clone)]
@@ -18,7 +18,6 @@ enum BuiltinCommand {
     Start,
     Plugin,
     Search,
-    Debug,
     Run,
     Completions,
     Init,
@@ -54,11 +53,6 @@ pub(crate) async fn select_command() -> Option<Commands> {
             CommandEntry::Builtin(BuiltinCommand::Logs),
         )
         .with_description(t!("interactive-cmd-logs-desc")),
-        SelectOption::new(
-            t!("interactive-cmd-debug"),
-            CommandEntry::Builtin(BuiltinCommand::Debug),
-        )
-        .with_description(t!("interactive-cmd-debug-desc")),
         SelectOption::new(
             t!("interactive-cmd-self-update"),
             CommandEntry::Builtin(BuiltinCommand::SelfUpdate),
@@ -111,7 +105,6 @@ fn prompt_builtin_args(cmd: BuiltinCommand) -> Option<Commands> {
         BuiltinCommand::Start => prompt_start(),
         BuiltinCommand::Plugin => prompt_plugin(),
         BuiltinCommand::Search => prompt_search(),
-        BuiltinCommand::Debug => prompt_debug(),
         BuiltinCommand::Run => Some(Commands::Run {
             plugin_id: None,
             args: vec![],
@@ -210,13 +203,6 @@ fn prompt_plugin() -> Option<Commands> {
 fn prompt_search() -> Option<Commands> {
     let query = Input::new(t!("interactive-search-query")).required().run()?;
     Some(Commands::Search { query })
-}
-
-fn prompt_debug() -> Option<Commands> {
-    // Currently only one debug subcommand
-    Some(Commands::Debug {
-        command: DebugCommands::Services,
-    })
 }
 
 fn prompt_completions() -> Option<Commands> {

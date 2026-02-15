@@ -1,6 +1,5 @@
 mod args;
 mod cmd_completions;
-mod cmd_debug;
 mod cmd_external;
 mod cmd_interactive;
 mod cmd_logs;
@@ -39,7 +38,6 @@ async fn main() -> anyhow::Result<()> {
         Commands::Start { port } => cmd_start::cmd_start(port).await?,
         Commands::Plugin { command } => cmd_plugin::cmd_plugin(command).await?,
         Commands::Search { query } => cmd_search::cmd_search(&query).await?,
-        Commands::Debug { command } => cmd_debug::cmd_debug(command).await?,
         Commands::Run { plugin_id, args } => cmd_run::cmd_run(plugin_id, args).await?,
         Commands::Completions { shell } => cmd_completions::cmd_completions(shell),
         Commands::Init { shell } => cmd_completions::cmd_init(shell)?,
