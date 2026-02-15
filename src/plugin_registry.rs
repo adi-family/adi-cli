@@ -4,13 +4,17 @@ use std::path::PathBuf;
 use indicatif::{ProgressBar, ProgressStyle};
 use lib_console_output::theme;
 use lib_i18n_core::t;
-use lib_plugin_registry::{PluginEntry, PluginInfo, RegistryClient, SearchKind, SearchResults};
+use lib_plugin_host::{is_glob_pattern, PluginInstaller, UpdateCheck};
+use lib_plugin_registry::{PluginEntry, PluginInfo, SearchResults};
 
 use crate::error::Result;
 
+/// CLI plugin manager — thin UI wrapper over `PluginInstaller`.
+///
+/// Delegates all business logic to `PluginInstaller` from `lib-plugin-host`,
+/// adding progress bars, i18n messages, and user prompts.
 pub struct PluginManager {
-    client: RegistryClient,
-    install_dir: PathBuf,
+    installer: PluginInstaller,
 }
 
 impl Default for PluginManager {
@@ -33,12 +37,9 @@ impl PluginManager {
             .join("adi")
             .join("plugins");
 
-        let client = RegistryClient::new(&registry_url).with_cache(cache_dir);
+        let installer = PluginInstaller::new(&registry_url, install_dir, cache_dir);
 
-        Self {
-            client,
-            install_dir,
-        }
+        Self { installer }
     }
 
     pub fn with_registry_url(url: &str) -> Self {
@@ -52,47 +53,44 @@ impl PluginManager {
             .join("adi")
             .join("plugins");
 
-        let client = RegistryClient::new(url).with_cache(cache_dir);
+        let installer = PluginInstaller::new(url, install_dir, cache_dir);
 
-        Self {
-            client,
-            install_dir,
-        }
+        Self { installer }
     }
 
+    // -- Delegated registry operations --
+
     pub async fn search(&self, query: &str) -> Result<SearchResults> {
-        let results = self.client.search(query, SearchKind::All).await?;
-        Ok(results)
+        Ok(self.installer.search(query).await?)
     }
 
     pub async fn list_plugins(&self) -> Result<Vec<PluginEntry>> {
-        let plugins = self.client.list_plugins().await?;
-        Ok(plugins)
+        Ok(self.installer.list_available().await?)
     }
 
-    /// Check if a plugin exists in the registry (without downloading).
-    ///
-    /// Returns Ok(Some(info)) if the plugin exists, Ok(None) if not found,
-    /// or Err on network/other errors.
     pub async fn get_plugin_info(&self, id: &str) -> Result<Option<PluginInfo>> {
-        match self.client.get_plugin_latest(id).await {
-            Ok(info) => Ok(Some(info)),
-            Err(lib_plugin_registry::RegistryError::NotFound(_)) => Ok(None),
-            Err(e) => Err(e.into()),
-        }
+        Ok(self.installer.get_plugin_info(id).await?)
     }
+
+    pub async fn list_installed(&self) -> Result<Vec<(String, String)>> {
+        Ok(self.installer.list_installed().await?)
+    }
+
+    pub fn plugin_path(&self, id: &str) -> PathBuf {
+        self.installer.plugin_path(id)
+    }
+
+    // -- Install with UI --
 
     pub async fn install_plugin(&self, id: &str, version: Option<&str>) -> Result<()> {
-        let platform = get_current_platform();
+        let platform = lib_plugin_manifest::current_platform();
 
-        // Get plugin info
-        let info = if let Some(v) = version {
-            self.client.get_plugin_version(id, v).await?
-        } else {
-            self.client.get_plugin_latest(id).await?
-        };
+        // Fetch info for pre-download message and progress bar sizing
+        let info = self.installer.get_plugin_info(id).await?;
+        let info = info.ok_or_else(|| {
+            crate::error::InstallerError::PluginNotFound { id: id.to_string() }
+        })?;
 
-        // Check if platform is supported
         let platform_build = info
             .platforms
             .iter()
@@ -113,7 +111,6 @@ impl PluginManager {
             )
         );
 
-        // Create progress bar
         let pb = ProgressBar::new(platform_build.size_bytes);
         pb.set_style(
             ProgressStyle::default_bar()
@@ -122,10 +119,9 @@ impl PluginManager {
                 .progress_chars("#>-"),
         );
 
-        // Download plugin
-        let bytes = self
-            .client
-            .download_plugin(id, &info.version, &platform, |done, total| {
+        let result = self
+            .installer
+            .install(id, version, |done, total| {
                 pb.set_length(total);
                 pb.set_position(done);
             })
@@ -133,109 +129,61 @@ impl PluginManager {
 
         pb.finish_with_message("downloaded");
 
-        // Extract to install directory
-        let plugin_dir = self.install_dir.join(id).join(&info.version);
-        tokio::fs::create_dir_all(&plugin_dir).await?;
-
         println!(
             "{}",
-            t!("plugin-install-extracting", "path" => &plugin_dir.display().to_string())
+            t!("plugin-install-extracting", "path" => &result.path.display().to_string())
         );
-
-        // Extract tarball
-        let decoder = flate2::read::GzDecoder::new(&bytes[..]);
-        let mut archive = tar::Archive::new(decoder);
-        archive.unpack(&plugin_dir)?;
-
-        // Write version file
-        let version_file = self.install_dir.join(id).join(".version");
-        tokio::fs::write(&version_file, info.version.as_bytes()).await?;
-
-        // Set executable permissions on Unix
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut entries = tokio::fs::read_dir(&plugin_dir).await?;
-            while let Some(entry) = entries.next_entry().await? {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Ok(metadata) = tokio::fs::metadata(&path).await {
-                        let mut perms = metadata.permissions();
-                        // Make files executable if they look like binaries
-                        if !path
-                            .extension()
-                            .is_some_and(|e| e == "json" || e == "toml" || e == "txt" || e == "md")
-                        {
-                            perms.set_mode(0o755);
-                            let _ = tokio::fs::set_permissions(&path, perms).await;
-                        }
-                    }
-                }
-            }
-        }
 
         {
             let prefix = t!("common-success-prefix");
-            let msg = t!("plugin-install-success", "id" => id, "version" => &info.version);
+            let msg = t!("plugin-install-success", "id" => id, "version" => &result.version);
             println!("{} {}", theme::success(prefix), msg);
         }
 
         Ok(())
     }
 
-    /// Install a plugin and all its dependencies.
+    /// Install a plugin and all its dependencies with UI feedback.
     pub async fn install_with_dependencies(&self, id: &str, version: Option<&str>) -> Result<()> {
-        // Track what we're installing to avoid cycles
         let mut installing = HashSet::new();
 
-        // Check if already installed first to provide user feedback
-        let version_file = self.install_dir.join(id).join(".version");
-        if version_file.exists() {
-            let current_version = tokio::fs::read_to_string(&version_file).await?;
-            {
-                let prefix = t!("common-info-prefix");
-                let msg = t!("plugin-install-already-installed",
-                    "id" => id,
-                    "version" => current_version.trim()
-                );
-                println!("{} {}", theme::brand(prefix), msg);
-            }
+        // Check if already installed — provide user feedback
+        if let Some(current_version) = self.installer.is_installed(id) {
+            let prefix = t!("common-info-prefix");
+            let msg = t!("plugin-install-already-installed",
+                "id" => id,
+                "version" => &current_version
+            );
+            println!("{} {}", theme::brand(prefix), msg);
             return Ok(());
         }
 
         self.install_recursive(id, version, &mut installing).await
     }
 
-    /// Recursively install a plugin and its dependencies.
     async fn install_recursive(
         &self,
         id: &str,
         version: Option<&str>,
         installing: &mut HashSet<String>,
     ) -> Result<()> {
-        // Check for cycles
         if installing.contains(id) {
             return Ok(());
         }
         installing.insert(id.to_string());
 
-        // Check if already installed
-        let version_file = self.install_dir.join(id).join(".version");
-        if version_file.exists() {
-            // Already installed, skip
+        if self.installer.is_installed(id).is_some() {
             return Ok(());
         }
 
-        // Install the plugin first (to get the manifest)
+        // Install with UI (progress bar, messages)
         self.install_plugin(id, version).await?;
 
-        // Now check for dependencies in the installed manifest
-        let deps = self.get_plugin_dependencies(id).await;
-
+        // Check dependencies using the library
+        let deps = self.installer.get_dependencies(id);
         for dep in deps {
             if !installing.contains(&dep) {
                 println!("{}", t!("plugin-install-dependency", "id" => &dep));
-                // Recursively install dependency
                 Box::pin(self.install_recursive(&dep, None, installing)).await?;
             }
         }
@@ -243,55 +191,12 @@ impl PluginManager {
         Ok(())
     }
 
-    /// Read dependencies from an installed plugin's manifest.
-    async fn get_plugin_dependencies(&self, id: &str) -> Vec<String> {
-        let mut deps = Vec::new();
-
-        // Find the latest version directory
-        let plugin_dir = self.install_dir.join(id);
-        let version_file = plugin_dir.join(".version");
-
-        let version = match tokio::fs::read_to_string(&version_file).await {
-            Ok(v) => v.trim().to_string(),
-            Err(_) => return deps,
-        };
-
-        let manifest_path = plugin_dir.join(&version).join("plugin.toml");
-
-        let content = match tokio::fs::read_to_string(&manifest_path).await {
-            Ok(c) => c,
-            Err(_) => return deps,
-        };
-
-        // Parse TOML to extract depends_on
-        if let Ok(table) = content.parse::<toml::Table>() {
-            if let Some(compat) = table.get("compatibility").and_then(|c| c.as_table()) {
-                if let Some(depends) = compat.get("depends_on").and_then(|d| d.as_array()) {
-                    for dep in depends {
-                        if let Some(s) = dep.as_str() {
-                            deps.push(s.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        deps
-    }
+    // -- Uninstall with UI --
 
     pub async fn uninstall_plugin(&self, id: &str) -> Result<()> {
-        let plugin_dir = self.install_dir.join(id);
-
-        if !plugin_dir.exists() {
-            return Err(crate::error::InstallerError::Other(format!(
-                "Plugin {} is not installed",
-                id
-            )));
-        }
-
         println!("{}", t!("plugin-uninstall-progress", "id" => id));
 
-        tokio::fs::remove_dir_all(&plugin_dir).await?;
+        self.installer.uninstall(id).await?;
 
         {
             let prefix = t!("common-success-prefix");
@@ -302,74 +207,34 @@ impl PluginManager {
         Ok(())
     }
 
+    // -- Update with UI --
+
     pub async fn update_plugin(&self, id: &str) -> Result<()> {
-        let version_file = self.install_dir.join(id).join(".version");
-
-        if !version_file.exists() {
-            return Err(crate::error::InstallerError::Other(format!(
-                "Plugin {} is not installed",
-                id
-            )));
-        }
-
-        let current_version = tokio::fs::read_to_string(&version_file).await?;
-        let latest = self.client.get_plugin_latest(id).await?;
-
-        if current_version.trim() == latest.version {
-            {
+        match self.installer.check_update(id).await? {
+            UpdateCheck::AlreadyLatest { version } => {
                 let prefix = t!("common-info-prefix");
-                let msg =
-                    t!("plugin-update-already-latest", "id" => id, "version" => &latest.version);
+                let msg = t!("plugin-update-already-latest", "id" => id, "version" => &version);
                 println!("{} {}", theme::brand(prefix), msg);
             }
-            return Ok(());
-        }
+            UpdateCheck::Available { current, latest } => {
+                println!(
+                    "{}",
+                    t!("plugin-update-available",
+                        "id" => id,
+                        "current" => &current,
+                        "latest" => &latest
+                    )
+                );
 
-        println!(
-            "{}",
-            t!("plugin-update-available",
-                "id" => id,
-                "current" => current_version.trim(),
-                "latest" => &latest.version
-            )
-        );
-
-        // Remove old version directory but keep plugin root
-        let old_version_dir = self.install_dir.join(id).join(current_version.trim());
-        if old_version_dir.exists() {
-            tokio::fs::remove_dir_all(&old_version_dir).await?;
-        }
-
-        // Install new version
-        self.install_plugin(id, Some(&latest.version)).await
-    }
-
-    pub async fn list_installed(&self) -> Result<Vec<(String, String)>> {
-        let mut installed = Vec::new();
-
-        if !self.install_dir.exists() {
-            return Ok(installed);
-        }
-
-        let mut entries = tokio::fs::read_dir(&self.install_dir).await?;
-        while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-            if path.is_dir() {
-                let version_file = path.join(".version");
-                if version_file.exists() {
-                    let version = tokio::fs::read_to_string(&version_file).await?;
-                    let name = path.file_name().unwrap().to_string_lossy().to_string();
-                    installed.push((name, version.trim().to_string()));
-                }
+                // Install the new version with UI
+                self.install_plugin(id, Some(&latest)).await?;
             }
         }
 
-        Ok(installed)
+        Ok(())
     }
 
-    pub fn plugin_path(&self, id: &str) -> PathBuf {
-        self.install_dir.join(id)
-    }
+    // -- Glob pattern install with UI --
 
     /// Install all plugins matching a glob pattern (e.g., "adi.lang.*")
     pub async fn install_plugins_matching(
@@ -377,8 +242,7 @@ impl PluginManager {
         pattern: &str,
         version: Option<&str>,
     ) -> Result<()> {
-        if !is_pattern(pattern) {
-            // Not a pattern, install single plugin with dependencies
+        if !is_glob_pattern(pattern) {
             return self.install_with_dependencies(pattern, version).await;
         }
 
@@ -387,21 +251,12 @@ impl PluginManager {
             t!("plugin-install-pattern-searching", "pattern" => pattern)
         );
 
-        // Fetch all available plugins
-        let all_plugins = self.list_plugins().await?;
-
-        // Filter plugins matching the pattern
-        let matching: Vec<_> = all_plugins
-            .iter()
-            .filter(|p| matches_pattern(&p.id, pattern))
-            .collect();
+        let matching = self.installer.find_matching(pattern).await?;
 
         if matching.is_empty() {
-            {
-                let prefix = t!("common-warning-prefix");
-                let msg = t!("plugin-install-pattern-none", "pattern" => pattern);
-                println!("{} {}", theme::warning(prefix), msg);
-            }
+            let prefix = t!("common-warning-prefix");
+            let msg = t!("plugin-install-pattern-none", "pattern" => pattern);
+            println!("{} {}", theme::warning(prefix), msg);
             return Ok(());
         }
 
@@ -445,7 +300,7 @@ impl PluginManager {
                     failed.push(plugin.id.clone());
                 }
             }
-            println!(); // Blank line between installs
+            println!();
         }
 
         {
@@ -456,11 +311,9 @@ impl PluginManager {
 
         if !failed.is_empty() {
             println!();
-            {
-                let prefix = t!("common-warning-prefix");
-                let msg = t!("plugin-install-pattern-failed");
-                println!("{} {}", theme::warning(prefix), msg);
-            }
+            let prefix = t!("common-warning-prefix");
+            let msg = t!("plugin-install-pattern-failed");
+            println!("{} {}", theme::warning(prefix), msg);
             for id in failed {
                 println!("  - {}", id);
             }
@@ -468,61 +321,4 @@ impl PluginManager {
 
         Ok(())
     }
-}
-
-fn get_current_platform() -> String {
-    let os = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
-
-    let os_name = match os {
-        "macos" => "darwin",
-        "linux" => "linux",
-        "windows" => "windows",
-        other => other,
-    };
-
-    let arch_name = arch;
-
-    format!("{}-{}", os_name, arch_name)
-}
-
-/// Check if a pattern contains wildcards
-fn is_pattern(s: &str) -> bool {
-    s.contains('*')
-}
-
-/// Match a string against a simple glob pattern (supports * wildcard)
-fn matches_pattern(s: &str, pattern: &str) -> bool {
-    let parts: Vec<&str> = pattern.split('*').collect();
-
-    if parts.len() == 1 {
-        // No wildcards, exact match
-        return s == pattern;
-    }
-
-    let mut pos = 0;
-
-    for (i, part) in parts.iter().enumerate() {
-        if i == 0 {
-            // First part must match at start
-            if !s.starts_with(part) {
-                return false;
-            }
-            pos = part.len();
-        } else if i == parts.len() - 1 {
-            // Last part must match at end
-            if !s.ends_with(part) {
-                return false;
-            }
-        } else {
-            // Middle parts must exist in order
-            if let Some(found_pos) = s[pos..].find(part) {
-                pos += found_pos + part.len();
-            } else {
-                return false;
-            }
-        }
-    }
-
-    true
 }
