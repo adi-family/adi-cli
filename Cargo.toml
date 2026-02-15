@@ -47,10 +47,5 @@ lib-console-output = { path = "../lib/lib-console-output" }
 # Environment variable parsing
 lib-env-parse = { path = "../lib/lib-env-parse" }
 
-# HTTP server for `adi start`
-axum = { version = "0.8", features = ["macros"] }
-tower-http = { version = "0.6", features = ["cors"] }
-hostname = "0.4"
-
 # TTY detection for auto-install prompts
 atty = "0.2"
