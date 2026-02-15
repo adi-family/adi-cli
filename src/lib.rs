@@ -3,7 +3,6 @@ pub mod completions;
 pub mod error;
 pub mod plugin_registry;
 pub mod plugin_runtime;
-pub mod project_config;
 pub mod self_update;
 pub mod user_config;
 

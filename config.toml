@@ -1,4 +1,0 @@
-# Central configuration file for ADI CLI
-
-[project]
-repository = "https://github.com/adi-family/adi-cli"

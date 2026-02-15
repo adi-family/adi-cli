@@ -6,9 +6,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::project_config::ProjectConfig;
-
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 
 pub async fn check_for_updates() -> Result<Option<String>> {
     tracing::trace!(current = CURRENT_VERSION, "Checking for updates");
@@ -114,9 +113,14 @@ fn build_github_client() -> Result<Client> {
         .map_err(|e| anyhow!("Failed to build GitHub client: {}", e))
 }
 
+fn parse_repository() -> (&'static str, &'static str) {
+    let url = REPOSITORY.trim_end_matches('/');
+    let parts: Vec<&str> = url.rsplitn(3, '/').collect();
+    (parts[1], parts[0])
+}
+
 async fn fetch_latest_release() -> Result<Release> {
-    let config = ProjectConfig::get();
-    let (repo_owner, repo_name) = config.parse_repository();
+    let (repo_owner, repo_name) = parse_repository();
     tracing::trace!(owner = %repo_owner, repo = %repo_name, "Fetching releases from GitHub");
 
     let client = build_github_client()?;
