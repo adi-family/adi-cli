@@ -542,13 +542,15 @@ impl PluginRuntime {
 
         let plugins_dir = &self.config.plugins_dir;
 
-        // O(1) path: resolve single symlink
+        // O(1) path: resolve single symlink, verify it still has a [cli] section
         if let Some(manifest_path) =
             lib_plugin_host::command_index::resolve_command(plugins_dir, command)
         {
             if let Ok(manifest) = PluginManifest::from_file(&manifest_path) {
-                tracing::trace!(command = %command, plugin_id = %manifest.plugin.id, "Found via command index");
-                return Some(manifest.plugin.id);
+                if manifest.cli.is_some() {
+                    tracing::trace!(command = %command, plugin_id = %manifest.plugin.id, "Found via command index");
+                    return Some(manifest.plugin.id);
+                }
             }
         }
 
