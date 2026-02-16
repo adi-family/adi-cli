@@ -302,35 +302,7 @@ pub fn init_completions<C: CommandFactory>(
     cmd = add_plugin_commands_from_manifests(cmd);
     write_completions_to_file(shell, bin_name, &cmd, file)?;
 
-    match shell {
-        CompletionShell::Zsh => {
-            add_to_shell_config(
-                shell,
-                r#"
-# ADI CLI completions
-fpath=(~/.zfunc $fpath)
-autoload -Uz compinit && compinit
-"#,
-            )?;
-        }
-        CompletionShell::Bash => {
-            let source_line = format!("source \"{}\"", completion_file.display());
-            add_to_shell_config(
-                shell,
-                &format!(
-                    r#"
-# ADI CLI completions
-{}
-"#,
-                    source_line
-                ),
-            )?;
-        }
-        CompletionShell::Fish => {
-            // Fish auto-loads from ~/.config/fish/completions
-        }
-        _ => {}
-    }
+    setup_shell_config(shell, &completion_file)?;
 
     Ok(completion_file)
 }
@@ -341,8 +313,6 @@ fn write_completions_to_file(
     cmd: &Command,
     mut file: std::fs::File,
 ) -> anyhow::Result<()> {
-    use std::io::Write;
-
     let dynamic_plugins = get_dynamic_completion_plugins();
 
     match shell {

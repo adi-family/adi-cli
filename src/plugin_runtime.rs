@@ -434,7 +434,7 @@ impl PluginRuntime {
     }
 
     /// Handles versioned directories (e.g., plugins/adi.tasks/0.8.8/plugin.toml)
-    fn find_plugin_toml_path(plugin_dir: &PathBuf) -> Option<PathBuf> {
+    fn find_plugin_toml_path(plugin_dir: &std::path::Path) -> Option<PathBuf> {
         let version_file = plugin_dir.join(".version");
         if version_file.exists() {
             if let Ok(version) = std::fs::read_to_string(&version_file) {

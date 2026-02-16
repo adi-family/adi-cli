@@ -98,7 +98,8 @@ async fn try_autoinstall_plugin(
                 return AutoinstallResult::Declined;
             }
 
-            let is_interactive = atty::is(atty::Stream::Stdin) && atty::is(atty::Stream::Stdout);
+            let is_interactive = std::io::IsTerminal::is_terminal(&std::io::stdin())
+                && std::io::IsTerminal::is_terminal(&std::io::stdout());
 
             let should_install = if is_interactive {
                 print!("{} ", t!("external-autoinstall-prompt"));

@@ -48,6 +48,3 @@ lib-console-output = { path = "../lib/lib-console-output" }
 
 # Environment variable parsing
 lib-env-parse = { path = "../lib/lib-env-parse" }
-
-# TTY detection for auto-install prompts
-atty = "0.2"

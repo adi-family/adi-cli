@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use indicatif::{ProgressBar, ProgressStyle};
-use lib_console_output::theme;
+use lib_console_output::{theme, out_info, out_success, out_warn};
 use lib_i18n_core::t;
 use lib_plugin_host::{is_glob_pattern, PluginConfig, PluginInstaller, UpdateCheck};
 use lib_plugin_registry::{PluginEntry, PluginInfo, SearchResults};
@@ -107,14 +107,11 @@ impl PluginManager {
                 ))
             })?;
 
-        println!(
-            "{}",
-            t!("plugin-install-downloading",
-                "id" => id,
-                "version" => &info.version,
-                "platform" => &platform
-            )
-        );
+        out_info!("{}", t!("plugin-install-downloading",
+            "id" => id,
+            "version" => &info.version,
+            "platform" => &platform
+        ));
 
         let pb = ProgressBar::new(platform_build.size_bytes);
         pb.set_style(
@@ -135,16 +132,8 @@ impl PluginManager {
         pb.finish_with_message("downloaded");
         tracing::trace!(id = %id, version = %result.version, path = %result.path.display(), "Plugin downloaded and extracted");
 
-        println!(
-            "{}",
-            t!("plugin-install-extracting", "path" => &result.path.display().to_string())
-        );
-
-        {
-            let prefix = t!("common-success-prefix");
-            let msg = t!("plugin-install-success", "id" => id, "version" => &result.version);
-            println!("{} {}", theme::success(prefix), msg);
-        }
+        out_info!("{}", t!("plugin-install-extracting", "path" => &result.path.display().to_string()));
+        out_success!("{}", t!("plugin-install-success", "id" => id, "version" => &result.version));
 
         Ok(())
     }
@@ -154,12 +143,10 @@ impl PluginManager {
         let mut installing = HashSet::new();
 
         if let Some(current_version) = self.installer.is_installed(id) {
-            let prefix = t!("common-info-prefix");
-            let msg = t!("plugin-install-already-installed",
+            out_info!("{}", t!("plugin-install-already-installed",
                 "id" => id,
                 "version" => &current_version
-            );
-            println!("{} {}", theme::brand(prefix), msg);
+            ));
             return Ok(());
         }
 
@@ -189,7 +176,7 @@ impl PluginManager {
         tracing::trace!(id = %id, deps = ?deps, "Checking plugin dependencies");
         for dep in deps {
             if !installing.contains(&dep) {
-                println!("{}", t!("plugin-install-dependency", "id" => &dep));
+                out_info!("{}", t!("plugin-install-dependency", "id" => &dep));
                 Box::pin(self.install_recursive(&dep, None, installing)).await?;
             }
         }
@@ -199,16 +186,12 @@ impl PluginManager {
 
     pub async fn uninstall_plugin(&self, id: &str) -> Result<()> {
         tracing::trace!(id = %id, "Uninstalling plugin");
-        println!("{}", t!("plugin-uninstall-progress", "id" => id));
+        out_info!("{}", t!("plugin-uninstall-progress", "id" => id));
 
         self.installer.uninstall(id).await?;
         tracing::trace!(id = %id, "Plugin uninstalled successfully");
 
-        {
-            let prefix = t!("common-success-prefix");
-            let msg = t!("plugin-uninstall-success", "id" => id);
-            println!("{} {}", theme::success(prefix), msg);
-        }
+        out_success!("{}", t!("plugin-uninstall-success", "id" => id));
 
         Ok(())
     }
@@ -218,20 +201,15 @@ impl PluginManager {
         match self.installer.check_update(id).await? {
             UpdateCheck::AlreadyLatest { version } => {
                 tracing::trace!(id = %id, version = %version, "Plugin is already at latest version");
-                let prefix = t!("common-info-prefix");
-                let msg = t!("plugin-update-already-latest", "id" => id, "version" => &version);
-                println!("{} {}", theme::brand(prefix), msg);
+                out_info!("{}", t!("plugin-update-already-latest", "id" => id, "version" => &version));
             }
             UpdateCheck::Available { current, latest } => {
                 tracing::trace!(id = %id, current = %current, latest = %latest, "Plugin update available");
-                println!(
-                    "{}",
-                    t!("plugin-update-available",
-                        "id" => id,
-                        "current" => &current,
-                        "latest" => &latest
-                    )
-                );
+                out_info!("{}", t!("plugin-update-available",
+                    "id" => id,
+                    "current" => &current,
+                    "latest" => &latest
+                ));
 
                 self.install_plugin(id, Some(&latest)).await?;
             }
@@ -252,41 +230,26 @@ impl PluginManager {
 
         tracing::trace!(pattern = %pattern, "Installing plugins matching glob pattern");
 
-        println!(
-            "{}",
-            t!("plugin-install-pattern-searching", "pattern" => pattern)
-        );
+        out_info!("{}", t!("plugin-install-pattern-searching", "pattern" => pattern));
 
         let matching = self.installer.find_matching(pattern).await?;
 
         if matching.is_empty() {
-            let prefix = t!("common-warning-prefix");
-            let msg = t!("plugin-install-pattern-none", "pattern" => pattern);
-            println!("{} {}", theme::warning(prefix), msg);
+            out_warn!("{}", t!("plugin-install-pattern-none", "pattern" => pattern));
             return Ok(());
         }
 
-        println!(
-            "{}",
-            t!("plugin-install-pattern-found", "count" => &matching.len().to_string())
-        );
-        println!();
+        out_info!("{}", t!("plugin-install-pattern-found", "count" => &matching.len().to_string()));
 
         for plugin in &matching {
-            println!(
-                "  {} {} - {}",
+            out_info!("  {} {} - {}",
                 theme::brand_bold(&plugin.id),
                 theme::muted(format!("v{}", plugin.latest_version)),
                 plugin.description
             );
         }
 
-        println!();
-        println!(
-            "{}",
-            t!("plugin-install-pattern-installing", "count" => &matching.len().to_string())
-        );
-        println!();
+        out_info!("{}", t!("plugin-install-pattern-installing", "count" => &matching.len().to_string()));
 
         let mut installed = 0;
         let mut failed = Vec::new();
@@ -297,31 +260,18 @@ impl PluginManager {
                     installed += 1;
                 }
                 Err(e) => {
-                    eprintln!(
-                        "{} Failed to install {}: {}",
-                        theme::warning("Warning:"),
-                        plugin.id,
-                        e
-                    );
+                    out_warn!("Failed to install {}: {}", plugin.id, e);
                     failed.push(plugin.id.clone());
                 }
             }
-            println!();
         }
 
-        {
-            let prefix = t!("common-success-prefix");
-            let msg = t!("plugin-install-pattern-success", "count" => &installed.to_string());
-            println!("{} {}", theme::success(prefix), msg);
-        }
+        out_success!("{}", t!("plugin-install-pattern-success", "count" => &installed.to_string()));
 
         if !failed.is_empty() {
-            println!();
-            let prefix = t!("common-warning-prefix");
-            let msg = t!("plugin-install-pattern-failed");
-            println!("{} {}", theme::warning(prefix), msg);
+            out_warn!("{}", t!("plugin-install-pattern-failed"));
             for id in failed {
-                println!("  - {}", id);
+                out_warn!("  - {}", id);
             }
         }
 

@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use lib_client_github::{no_auth, Client, Release, ReleaseAsset};
-use lib_console_output::theme;
+use lib_console_output::{out_info, out_success};
 use lib_i18n_core::t;
 use std::env;
 use std::fs;
@@ -25,35 +25,23 @@ pub async fn check_for_updates() -> Result<Option<String>> {
 
 pub async fn self_update(force: bool) -> Result<()> {
     tracing::trace!(force = force, current = CURRENT_VERSION, "Starting self-update");
-    println!("{}", theme::brand(t!("self-update-checking")));
+    out_info!("{}", t!("self-update-checking"));
 
     let latest_version = fetch_latest_version().await?;
 
     if !force && !version_is_newer(&latest_version, CURRENT_VERSION) {
         tracing::trace!("No update needed");
-        {
-            let prefix = t!("common-checkmark");
-            let msg = t!("self-update-already-latest", "version" => CURRENT_VERSION);
-            println!("{} {}", theme::success(prefix), msg);
-        }
+        out_success!("{}", t!("self-update-already-latest", "version" => CURRENT_VERSION));
         return Ok(());
     }
 
-    {
-        let prefix = t!("common-arrow");
-        let msg = t!("self-update-new-version", "current" => CURRENT_VERSION, "latest" => &latest_version);
-        println!("{} {}", theme::brand(prefix), msg);
-    }
+    out_info!("{}", t!("self-update-new-version", "current" => CURRENT_VERSION, "latest" => &latest_version));
 
     let current_exe = env::current_exe()?;
     let platform = detect_platform()?;
     tracing::trace!(platform = %platform, exe = %current_exe.display(), "Detected platform");
 
-    {
-        let prefix = t!("common-arrow");
-        let msg = t!("self-update-downloading");
-        println!("{} {}", theme::brand(prefix), msg);
-    }
+    out_info!("{}", t!("self-update-downloading"));
     let release = fetch_latest_release().await?;
     let asset = select_asset(&release, &platform)?;
     tracing::trace!(asset = %asset.name, url = %asset.browser_download_url, "Selected release asset");
@@ -66,30 +54,18 @@ pub async fn self_update(force: bool) -> Result<()> {
     download_file(&asset.browser_download_url, &archive_path).await?;
     tracing::trace!("Download complete");
 
-    {
-        let prefix = t!("common-arrow");
-        let msg = t!("self-update-extracting");
-        println!("{} {}", theme::brand(prefix), msg);
-    }
+    out_info!("{}", t!("self-update-extracting"));
     let binary_path = extract_binary(&archive_path, &temp_dir)?;
     tracing::trace!(binary = %binary_path.display(), "Binary extracted");
 
-    {
-        let prefix = t!("common-arrow");
-        let msg = t!("self-update-installing");
-        println!("{} {}", theme::brand(prefix), msg);
-    }
+    out_info!("{}", t!("self-update-installing"));
     tracing::trace!(src = %binary_path.display(), dest = %current_exe.display(), "Replacing binary");
     replace_binary(&binary_path, &current_exe)?;
 
     let _ = fs::remove_dir_all(&temp_dir);
     tracing::trace!("Temp directory cleaned up");
 
-    {
-        let prefix = t!("common-checkmark");
-        let msg = t!("self-update-success", "version" => &latest_version);
-        println!("{} {}", theme::success(prefix), msg);
-    }
+    out_success!("{}", t!("self-update-success", "version" => &latest_version));
 
     tracing::trace!(version = %latest_version, "Self-update complete");
     Ok(())
@@ -248,7 +224,7 @@ fn extract_binary(archive_path: &Path, temp_dir: &Path) -> Result<PathBuf> {
     Ok(binary_path)
 }
 
-fn replace_binary(new_binary: &PathBuf, current_exe: &PathBuf) -> Result<()> {
+fn replace_binary(new_binary: &Path, current_exe: &Path) -> Result<()> {
     tracing::trace!(src = %new_binary.display(), dest = %current_exe.display(), "Replacing binary");
 
     #[cfg(unix)]
