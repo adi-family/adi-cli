@@ -122,12 +122,35 @@ external-autoinstall-disabled = Auto-install disabled. Run: adi plugin install {
 external-autoinstall-not-found = No plugin found providing command '{ $command }'
 
 # ============================================================================
+# INFO COMMAND
+# ============================================================================
+
+info-title = ADI CLI Info
+info-version = Version
+info-config-dir = Config
+info-plugins-dir = Plugins
+info-registry = Registry
+info-theme = Theme
+info-language = Language
+info-installed-plugins = Installed Plugins ({ $count })
+info-no-plugins = No plugins installed
+info-commands-title = Commands
+info-plugin-commands = Plugin commands:
+info-cmd-info = Show CLI info, version, and paths
+info-cmd-start = Start local ADI server
+info-cmd-plugin = Manage plugins
+info-cmd-run = Run a plugin CLI
+info-cmd-logs = Stream plugin logs
+info-cmd-self-update = Update adi CLI
+
+# ============================================================================
 # INTERACTIVE COMMAND SELECTION
 # ============================================================================
 
 interactive-select-command = Choose a command
 
 # Command labels
+interactive-cmd-info = info
 interactive-cmd-start = start
 interactive-cmd-plugin = plugin
 interactive-cmd-search = search
@@ -139,6 +162,7 @@ interactive-cmd-completions = completions
 interactive-cmd-init = init
 
 # Command descriptions
+interactive-cmd-info-desc = Show CLI info, version, paths, and installed plugins
 interactive-cmd-start-desc = Start local ADI server for browser connection
 interactive-cmd-plugin-desc = Manage plugins from the registry
 interactive-cmd-search-desc = Search for plugins and packages

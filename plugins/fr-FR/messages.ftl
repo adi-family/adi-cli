@@ -122,6 +122,83 @@ external-autoinstall-disabled = Installation automatique désactivée. Exécutez
 external-autoinstall-not-found = Aucun plugin trouvé fournissant la commande '{ $command }'
 
 # ============================================================================
+# COMMANDE D'INFORMATION
+# ============================================================================
+
+info-title = Informations ADI CLI
+info-version = Version
+info-config-dir = Configuration
+info-plugins-dir = Plugins
+info-registry = Registre
+info-theme = Thème
+info-language = Langue
+info-installed-plugins = Plugins installés ({ $count })
+info-no-plugins = Aucun plugin installé
+info-commands-title = Commandes
+info-plugin-commands = Commandes des plugins :
+info-cmd-info = Afficher les infos CLI, version et chemins
+info-cmd-start = Démarrer le serveur ADI local
+info-cmd-plugin = Gérer les plugins
+info-cmd-run = Exécuter le CLI d'un plugin
+info-cmd-logs = Voir les logs du plugin
+info-cmd-self-update = Mettre à jour adi CLI
+
+# ============================================================================
+# SÉLECTION INTERACTIVE DES COMMANDES
+# ============================================================================
+
+interactive-select-command = Choisissez une commande
+
+# Libellés des commandes
+interactive-cmd-info = info
+interactive-cmd-start = démarrer
+interactive-cmd-plugin = plugin
+interactive-cmd-search = recherche
+interactive-cmd-run = exécuter
+interactive-cmd-logs = logs
+interactive-cmd-debug = débogage
+interactive-cmd-self-update = mise à jour auto
+interactive-cmd-completions = complétions
+interactive-cmd-init = init
+
+# Descriptions des commandes
+interactive-cmd-info-desc = Afficher les infos CLI, version, chemins et plugins installés
+interactive-cmd-start-desc = Démarrer le serveur ADI local pour la connexion navigateur
+interactive-cmd-plugin-desc = Gérer les plugins depuis le registre
+interactive-cmd-search-desc = Rechercher des plugins et des paquets
+interactive-cmd-run-desc = Exécuter l'interface CLI d'un plugin
+interactive-cmd-logs-desc = Voir les logs d'un plugin en temps réel
+interactive-cmd-debug-desc = Commandes de débogage et diagnostic
+interactive-cmd-self-update-desc = Mettre à jour adi CLI vers la dernière version
+interactive-cmd-completions-desc = Générer les complétions shell
+interactive-cmd-init-desc = Initialiser les complétions shell
+
+# Demandes d'arguments
+interactive-self-update-force = Forcer la mise à jour même si déjà à la dernière version ?
+interactive-start-port = Port
+interactive-search-query = Requête de recherche
+interactive-completions-shell = Sélectionner le shell
+interactive-init-shell = Sélectionner le shell (laisser vide pour détection auto)
+interactive-logs-plugin-id = ID du plugin (ex. adi.hive)
+interactive-logs-follow = Suivre la sortie des logs ?
+interactive-logs-lines = Nombre de lignes
+
+# Sous-commandes de plugins
+interactive-plugin-select = Sélectionner l'action du plugin
+interactive-plugin-list = Lister les disponibles
+interactive-plugin-installed = Lister les installés
+interactive-plugin-search = Rechercher
+interactive-plugin-install = Installer
+interactive-plugin-update = Mettre à jour
+interactive-plugin-update-all = Tout mettre à jour
+interactive-plugin-uninstall = Désinstaller
+interactive-plugin-path = Afficher le chemin
+interactive-plugin-install-id = ID du plugin à installer (ex. adi.tasks)
+interactive-plugin-update-id = ID du plugin à mettre à jour
+interactive-plugin-uninstall-id = ID du plugin à désinstaller
+interactive-plugin-path-id = ID du plugin
+
+# ============================================================================
 # MESSAGES COMMUNS/PARTAGÉS
 # ============================================================================
 

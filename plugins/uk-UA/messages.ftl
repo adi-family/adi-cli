@@ -122,6 +122,83 @@ external-autoinstall-disabled = Автовстановлення вимкнен�
 external-autoinstall-not-found = Не знайдено плагін, що надає команду '{ $command }'
 
 # ============================================================================
+# КОМАНДА ІНФОРМАЦІЇ
+# ============================================================================
+
+info-title = Інформація ADI CLI
+info-version = Версія
+info-config-dir = Конфігурація
+info-plugins-dir = Плагіни
+info-registry = Реєстр
+info-theme = Тема
+info-language = Мова
+info-installed-plugins = Встановлені плагіни ({ $count })
+info-no-plugins = Плагіни не встановлені
+info-commands-title = Команди
+info-plugin-commands = Команди плагінів:
+info-cmd-info = Показати інформацію CLI, версію та шляхи
+info-cmd-start = Запустити локальний сервер ADI
+info-cmd-plugin = Керувати плагінами
+info-cmd-run = Запустити CLI плагіна
+info-cmd-logs = Переглянути логи плагіна
+info-cmd-self-update = Оновити adi CLI
+
+# ============================================================================
+# ІНТЕРАКТИВНИЙ ВИБІР КОМАНД
+# ============================================================================
+
+interactive-select-command = Оберіть команду
+
+# Мітки команд
+interactive-cmd-info = інфо
+interactive-cmd-start = старт
+interactive-cmd-plugin = плагін
+interactive-cmd-search = пошук
+interactive-cmd-run = запуск
+interactive-cmd-logs = логи
+interactive-cmd-debug = налагодження
+interactive-cmd-self-update = самооновлення
+interactive-cmd-completions = доповнення
+interactive-cmd-init = ініціалізація
+
+# Описи команд
+interactive-cmd-info-desc = Показати інформацію CLI, версію, шляхи та встановлені плагіни
+interactive-cmd-start-desc = Запустити локальний сервер ADI для підключення браузера
+interactive-cmd-plugin-desc = Керувати плагінами з реєстру
+interactive-cmd-search-desc = Пошук плагінів та пакетів
+interactive-cmd-run-desc = Запустити CLI інтерфейс плагіна
+interactive-cmd-logs-desc = Переглядати логи плагіна в реальному часі
+interactive-cmd-debug-desc = Команди налагодження та діагностики
+interactive-cmd-self-update-desc = Оновити adi CLI до останньої версії
+interactive-cmd-completions-desc = Згенерувати доповнення для shell
+interactive-cmd-init-desc = Ініціалізувати доповнення для shell
+
+# Запити аргументів
+interactive-self-update-force = Примусово оновити навіть якщо версія остання?
+interactive-start-port = Порт
+interactive-search-query = Пошуковий запит
+interactive-completions-shell = Оберіть shell
+interactive-init-shell = Оберіть shell (залиште порожнім для автовизначення)
+interactive-logs-plugin-id = ID плагіна (наприклад, adi.hive)
+interactive-logs-follow = Слідкувати за виводом логів?
+interactive-logs-lines = Кількість рядків
+
+# Підкоманди плагінів
+interactive-plugin-select = Оберіть дію з плагіном
+interactive-plugin-list = Список доступних
+interactive-plugin-installed = Список встановлених
+interactive-plugin-search = Пошук
+interactive-plugin-install = Встановити
+interactive-plugin-update = Оновити
+interactive-plugin-update-all = Оновити всі
+interactive-plugin-uninstall = Видалити
+interactive-plugin-path = Показати шлях
+interactive-plugin-install-id = ID плагіна для встановлення (наприклад, adi.tasks)
+interactive-plugin-update-id = ID плагіна для оновлення
+interactive-plugin-uninstall-id = ID плагіна для видалення
+interactive-plugin-path-id = ID плагіна
+
+# ============================================================================
 # ЗАГАЛЬНІ/СПІЛЬНІ ПОВІДОМЛЕННЯ
 # ============================================================================
 

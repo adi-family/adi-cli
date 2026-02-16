@@ -122,6 +122,83 @@ external-autoinstall-disabled = Automatische Installation deaktiviert. Führen S
 external-autoinstall-not-found = Kein Plugin gefunden, das Befehl '{ $command }' bereitstellt
 
 # ============================================================================
+# INFO-BEFEHL
+# ============================================================================
+
+info-title = ADI CLI Info
+info-version = Version
+info-config-dir = Konfiguration
+info-plugins-dir = Plugins
+info-registry = Registry
+info-theme = Theme
+info-language = Sprache
+info-installed-plugins = Installierte Plugins ({ $count })
+info-no-plugins = Keine Plugins installiert
+info-commands-title = Befehle
+info-plugin-commands = Plugin-Befehle:
+info-cmd-info = CLI-Info, Version und Pfade anzeigen
+info-cmd-start = Lokalen ADI-Server starten
+info-cmd-plugin = Plugins verwalten
+info-cmd-run = Plugin-CLI ausführen
+info-cmd-logs = Plugin-Logs streamen
+info-cmd-self-update = adi CLI aktualisieren
+
+# ============================================================================
+# INTERAKTIVE BEFEHLSAUSWAHL
+# ============================================================================
+
+interactive-select-command = Befehl auswählen
+
+# Befehlsbezeichnungen
+interactive-cmd-info = info
+interactive-cmd-start = start
+interactive-cmd-plugin = plugin
+interactive-cmd-search = suche
+interactive-cmd-run = ausführen
+interactive-cmd-logs = logs
+interactive-cmd-debug = debug
+interactive-cmd-self-update = selbstaktualisierung
+interactive-cmd-completions = vervollständigungen
+interactive-cmd-init = init
+
+# Befehlsbeschreibungen
+interactive-cmd-info-desc = CLI-Info, Version, Pfade und installierte Plugins anzeigen
+interactive-cmd-start-desc = Lokalen ADI-Server für Browser-Verbindung starten
+interactive-cmd-plugin-desc = Plugins aus der Registry verwalten
+interactive-cmd-search-desc = Nach Plugins und Paketen suchen
+interactive-cmd-run-desc = CLI-Schnittstelle eines Plugins ausführen
+interactive-cmd-logs-desc = Live-Logs eines Plugins streamen
+interactive-cmd-debug-desc = Debug- und Diagnosebefehle
+interactive-cmd-self-update-desc = adi CLI auf die neueste Version aktualisieren
+interactive-cmd-completions-desc = Shell-Vervollständigungen generieren
+interactive-cmd-init-desc = Shell-Vervollständigungen initialisieren
+
+# Argument-Abfragen
+interactive-self-update-force = Update erzwingen, auch wenn bereits auf neuester Version?
+interactive-start-port = Port
+interactive-search-query = Suchbegriff
+interactive-completions-shell = Shell auswählen
+interactive-init-shell = Shell auswählen (leer lassen für Autoerkennung)
+interactive-logs-plugin-id = Plugin-ID (z.B. adi.hive)
+interactive-logs-follow = Log-Ausgabe verfolgen?
+interactive-logs-lines = Anzahl der Zeilen
+
+# Plugin-Unterbefehle
+interactive-plugin-select = Plugin-Aktion auswählen
+interactive-plugin-list = Verfügbare auflisten
+interactive-plugin-installed = Installierte auflisten
+interactive-plugin-search = Suchen
+interactive-plugin-install = Installieren
+interactive-plugin-update = Aktualisieren
+interactive-plugin-update-all = Alle aktualisieren
+interactive-plugin-uninstall = Deinstallieren
+interactive-plugin-path = Pfad anzeigen
+interactive-plugin-install-id = Plugin-ID zum Installieren (z.B. adi.tasks)
+interactive-plugin-update-id = Plugin-ID zum Aktualisieren
+interactive-plugin-uninstall-id = Plugin-ID zum Deinstallieren
+interactive-plugin-path-id = Plugin-ID
+
+# ============================================================================
 # GEMEINSAME NACHRICHTEN
 # ============================================================================
 

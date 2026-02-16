@@ -1,5 +1,6 @@
 mod args;
 mod cmd_external;
+mod cmd_info;
 mod cmd_interactive;
 mod cmd_logs;
 mod cmd_plugin;
@@ -70,6 +71,10 @@ async fn main() -> anyhow::Result<()> {
         } => {
             tracing::trace!(plugin_id = %plugin_id, "Dispatching: logs");
             cmd_logs::cmd_logs(&plugin_id, follow, lines, level, service).await?
+        }
+        Commands::Info => {
+            tracing::trace!("Dispatching: info");
+            cmd_info::cmd_info().await?
         }
         Commands::External(args) => {
             tracing::trace!(args = ?args, "Dispatching: external");

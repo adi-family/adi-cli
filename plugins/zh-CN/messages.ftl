@@ -122,6 +122,83 @@ external-autoinstall-disabled = 自动安装已禁用。运行: adi plugin insta
 external-autoinstall-not-found = 未找到提供命令 '{ $command }' 的插件
 
 # ============================================================================
+# 信息命令
+# ============================================================================
+
+info-title = ADI CLI 信息
+info-version = 版本
+info-config-dir = 配置
+info-plugins-dir = 插件
+info-registry = 注册表
+info-theme = 主题
+info-language = 语言
+info-installed-plugins = 已安装插件 ({ $count })
+info-no-plugins = 没有安装插件
+info-commands-title = 命令
+info-plugin-commands = 插件命令：
+info-cmd-info = 显示CLI信息、版本和路径
+info-cmd-start = 启动本地ADI服务器
+info-cmd-plugin = 管理插件
+info-cmd-run = 运行插件CLI
+info-cmd-logs = 查看插件日志
+info-cmd-self-update = 更新adi CLI
+
+# ============================================================================
+# 交互式命令选择
+# ============================================================================
+
+interactive-select-command = 选择命令
+
+# 命令标签
+interactive-cmd-info = 信息
+interactive-cmd-start = 启动
+interactive-cmd-plugin = 插件
+interactive-cmd-search = 搜索
+interactive-cmd-run = 运行
+interactive-cmd-logs = 日志
+interactive-cmd-debug = 调试
+interactive-cmd-self-update = 自更新
+interactive-cmd-completions = 补全
+interactive-cmd-init = 初始化
+
+# 命令描述
+interactive-cmd-info-desc = 显示CLI信息、版本、路径和已安装插件
+interactive-cmd-start-desc = 启动本地ADI服务器以连接浏览器
+interactive-cmd-plugin-desc = 从注册表管理插件
+interactive-cmd-search-desc = 搜索插件和软件包
+interactive-cmd-run-desc = 运行插件的CLI接口
+interactive-cmd-logs-desc = 实时查看插件日志
+interactive-cmd-debug-desc = 调试和诊断命令
+interactive-cmd-self-update-desc = 将adi CLI更新到最新版本
+interactive-cmd-completions-desc = 生成shell补全
+interactive-cmd-init-desc = 初始化shell补全
+
+# 参数提示
+interactive-self-update-force = 即使是最新版本也要强制更新吗？
+interactive-start-port = 端口
+interactive-search-query = 搜索查询
+interactive-completions-shell = 选择shell
+interactive-init-shell = 选择shell（留空自动检测）
+interactive-logs-plugin-id = 插件ID（例如 adi.hive）
+interactive-logs-follow = 跟踪日志输出？
+interactive-logs-lines = 行数
+
+# 插件子命令
+interactive-plugin-select = 选择插件操作
+interactive-plugin-list = 列出可用
+interactive-plugin-installed = 列出已安装
+interactive-plugin-search = 搜索
+interactive-plugin-install = 安装
+interactive-plugin-update = 更新
+interactive-plugin-update-all = 全部更新
+interactive-plugin-uninstall = 卸载
+interactive-plugin-path = 显示路径
+interactive-plugin-install-id = 要安装的插件ID（例如 adi.tasks）
+interactive-plugin-update-id = 要更新的插件ID
+interactive-plugin-uninstall-id = 要卸载的插件ID
+interactive-plugin-path-id = 插件ID
+
+# ============================================================================
 # 通用/共享消息
 # ============================================================================
 

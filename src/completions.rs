@@ -409,7 +409,7 @@ _adi "$@"
 }
 
 const ZSH_BUILTIN_COMMANDS: &[&str] = &[
-    "plugin", "search", "services", "run", "self-update", "completions",
+    "plugin", "search", "services", "run", "self-update", "completions", "info",
 ];
 
 fn build_zsh_plugin_command_entries(cmd: &Command) -> String {

@@ -1,8 +1,31 @@
 use cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
 use lib_console_output::input::{Confirm, Input, Select, SelectOption};
+use lib_console_output::theme;
 use lib_i18n_core::t;
 
 use crate::args::{Commands, PluginCommands};
+
+fn print_welcome() {
+    let version = env!("CARGO_PKG_VERSION");
+    let title = format!(
+        "  {}  {} {} {}",
+        theme::brand_bold(theme::icons::BRAND),
+        theme::brand_bold("A"),
+        theme::brand_bold("D"),
+        theme::brand_bold("I"),
+    );
+    let separator = theme::muted("───────────────────");
+    let ver = theme::muted(format!("v{version}"));
+    println!("{title} {separator} {ver}");
+    println!(
+        "  when you {} {}, {} {}",
+        theme::brand("think"),
+        theme::brand_bold("agents"),
+        theme::brand("think"),
+        theme::brand_bold("adi"),
+    );
+    println!();
+}
 
 #[derive(Clone)]
 enum CommandEntry {
@@ -12,6 +35,7 @@ enum CommandEntry {
 
 #[derive(Clone, Copy)]
 enum BuiltinCommand {
+    Info,
     SelfUpdate,
     Start,
     Plugin,
@@ -22,7 +46,13 @@ enum BuiltinCommand {
 /// Returns `None` if user cancels.
 pub(crate) async fn select_command() -> Option<Commands> {
     tracing::trace!("Entering interactive command selection");
+    print_welcome();
     let mut options: Vec<SelectOption<CommandEntry>> = vec![
+        SelectOption::new(
+            t!("interactive-cmd-info"),
+            CommandEntry::Builtin(BuiltinCommand::Info),
+        )
+        .with_description(t!("interactive-cmd-info-desc")),
         SelectOption::new(
             t!("interactive-cmd-start"),
             CommandEntry::Builtin(BuiltinCommand::Start),
@@ -84,6 +114,7 @@ pub(crate) async fn select_command() -> Option<Commands> {
 
 fn prompt_builtin_args(cmd: BuiltinCommand) -> Option<Commands> {
     match cmd {
+        BuiltinCommand::Info => Some(Commands::Info),
         BuiltinCommand::SelfUpdate => prompt_self_update(),
         BuiltinCommand::Start => prompt_start(),
         BuiltinCommand::Plugin => prompt_plugin(),

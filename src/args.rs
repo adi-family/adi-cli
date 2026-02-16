@@ -67,6 +67,10 @@ pub(crate) enum Commands {
         service: Option<String>,
     },
 
+    /// Show CLI info: version, paths, installed plugins, and available commands
+    #[command(visible_alias = "i", visible_alias = "h")]
+    Info,
+
     /// Plugin-provided commands (dynamically discovered from installed plugins)
     #[command(external_subcommand)]
     External(Vec<String>),

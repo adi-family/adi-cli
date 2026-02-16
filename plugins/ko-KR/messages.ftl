@@ -122,6 +122,83 @@ external-autoinstall-disabled = 자동 설치가 비활성화되었습니다. �
 external-autoinstall-not-found = 명령 '{ $command }'을(를) 제공하는 플러그인을 찾을 수 없습니다
 
 # ============================================================================
+# 정보 명령
+# ============================================================================
+
+info-title = ADI CLI 정보
+info-version = 버전
+info-config-dir = 설정
+info-plugins-dir = 플러그인
+info-registry = 레지스트리
+info-theme = 테마
+info-language = 언어
+info-installed-plugins = 설치된 플러그인 ({ $count })
+info-no-plugins = 설치된 플러그인이 없습니다
+info-commands-title = 명령
+info-plugin-commands = 플러그인 명령:
+info-cmd-info = CLI 정보, 버전, 경로 표시
+info-cmd-start = 로컬 ADI 서버 시작
+info-cmd-plugin = 플러그인 관리
+info-cmd-run = 플러그인 CLI 실행
+info-cmd-logs = 플러그인 로그 보기
+info-cmd-self-update = adi CLI 업데이트
+
+# ============================================================================
+# 인터랙티브 명령 선택
+# ============================================================================
+
+interactive-select-command = 명령 선택
+
+# 명령 라벨
+interactive-cmd-info = 정보
+interactive-cmd-start = 시작
+interactive-cmd-plugin = 플러그인
+interactive-cmd-search = 검색
+interactive-cmd-run = 실행
+interactive-cmd-logs = 로그
+interactive-cmd-debug = 디버그
+interactive-cmd-self-update = 자동 업데이트
+interactive-cmd-completions = 자동완성
+interactive-cmd-init = 초기화
+
+# 명령 설명
+interactive-cmd-info-desc = CLI 정보, 버전, 경로, 설치된 플러그인 표시
+interactive-cmd-start-desc = 브라우저 연결을 위한 로컬 ADI 서버 시작
+interactive-cmd-plugin-desc = 레지스트리에서 플러그인 관리
+interactive-cmd-search-desc = 플러그인 및 패키지 검색
+interactive-cmd-run-desc = 플러그인의 CLI 인터페이스 실행
+interactive-cmd-logs-desc = 플러그인의 실시간 로그 스트리밍
+interactive-cmd-debug-desc = 디버그 및 진단 명령
+interactive-cmd-self-update-desc = adi CLI를 최신 버전으로 업데이트
+interactive-cmd-completions-desc = 셸 자동완성 생성
+interactive-cmd-init-desc = 셸 자동완성 초기화
+
+# 인수 프롬프트
+interactive-self-update-force = 최신 버전이어도 강제 업데이트하시겠습니까?
+interactive-start-port = 포트
+interactive-search-query = 검색어
+interactive-completions-shell = 셸 선택
+interactive-init-shell = 셸 선택 (자동 감지하려면 비워두세요)
+interactive-logs-plugin-id = 플러그인 ID (예: adi.hive)
+interactive-logs-follow = 로그 출력을 추적하시겠습니까?
+interactive-logs-lines = 줄 수
+
+# 플러그인 하위 명령
+interactive-plugin-select = 플러그인 작업 선택
+interactive-plugin-list = 사용 가능 목록
+interactive-plugin-installed = 설치됨 목록
+interactive-plugin-search = 검색
+interactive-plugin-install = 설치
+interactive-plugin-update = 업데이트
+interactive-plugin-update-all = 모두 업데이트
+interactive-plugin-uninstall = 제거
+interactive-plugin-path = 경로 표시
+interactive-plugin-install-id = 설치할 플러그인 ID (예: adi.tasks)
+interactive-plugin-update-id = 업데이트할 플러그인 ID
+interactive-plugin-uninstall-id = 제거할 플러그인 ID
+interactive-plugin-path-id = 플러그인 ID
+
+# ============================================================================
 # 공통 메시지
 # ============================================================================
 

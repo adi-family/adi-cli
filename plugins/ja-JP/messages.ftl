@@ -122,6 +122,83 @@ external-autoinstall-disabled = 自動インストールが無効です。実行
 external-autoinstall-not-found = コマンド '{ $command }' を提供するプラグインが見つかりません
 
 # ============================================================================
+# 情報コマンド
+# ============================================================================
+
+info-title = ADI CLI 情報
+info-version = バージョン
+info-config-dir = 設定
+info-plugins-dir = プラグイン
+info-registry = レジストリ
+info-theme = テーマ
+info-language = 言語
+info-installed-plugins = インストール済みプラグイン ({ $count })
+info-no-plugins = プラグインがインストールされていません
+info-commands-title = コマンド
+info-plugin-commands = プラグインコマンド:
+info-cmd-info = CLI情報、バージョン、パスを表示
+info-cmd-start = ローカルADIサーバーを起動
+info-cmd-plugin = プラグインを管理
+info-cmd-run = プラグインCLIを実行
+info-cmd-logs = プラグインログを表示
+info-cmd-self-update = adi CLIを更新
+
+# ============================================================================
+# インタラクティブコマンド選択
+# ============================================================================
+
+interactive-select-command = コマンドを選択
+
+# コマンドラベル
+interactive-cmd-info = 情報
+interactive-cmd-start = 起動
+interactive-cmd-plugin = プラグイン
+interactive-cmd-search = 検索
+interactive-cmd-run = 実行
+interactive-cmd-logs = ログ
+interactive-cmd-debug = デバッグ
+interactive-cmd-self-update = 自動更新
+interactive-cmd-completions = 補完
+interactive-cmd-init = 初期化
+
+# コマンド説明
+interactive-cmd-info-desc = CLI情報、バージョン、パス、インストール済みプラグインを表示
+interactive-cmd-start-desc = ブラウザ接続用のローカルADIサーバーを起動
+interactive-cmd-plugin-desc = レジストリからプラグインを管理
+interactive-cmd-search-desc = プラグインとパッケージを検索
+interactive-cmd-run-desc = プラグインのCLIインターフェースを実行
+interactive-cmd-logs-desc = プラグインのライブログをストリーム
+interactive-cmd-debug-desc = デバッグと診断コマンド
+interactive-cmd-self-update-desc = adi CLIを最新バージョンに更新
+interactive-cmd-completions-desc = シェル補完を生成
+interactive-cmd-init-desc = シェル補完を初期化
+
+# 引数プロンプト
+interactive-self-update-force = 最新バージョンでも強制更新しますか？
+interactive-start-port = ポート
+interactive-search-query = 検索クエリ
+interactive-completions-shell = シェルを選択
+interactive-init-shell = シェルを選択（自動検出するには空のまま）
+interactive-logs-plugin-id = プラグインID（例: adi.hive）
+interactive-logs-follow = ログ出力を追跡しますか？
+interactive-logs-lines = 行数
+
+# プラグインサブコマンド
+interactive-plugin-select = プラグインアクションを選択
+interactive-plugin-list = 利用可能一覧
+interactive-plugin-installed = インストール済み一覧
+interactive-plugin-search = 検索
+interactive-plugin-install = インストール
+interactive-plugin-update = 更新
+interactive-plugin-update-all = すべて更新
+interactive-plugin-uninstall = アンインストール
+interactive-plugin-path = パスを表示
+interactive-plugin-install-id = インストールするプラグインID（例: adi.tasks）
+interactive-plugin-update-id = 更新するプラグインID
+interactive-plugin-uninstall-id = アンインストールするプラグインID
+interactive-plugin-path-id = プラグインID
+
+# ============================================================================
 # 共通メッセージ
 # ============================================================================
 
