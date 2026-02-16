@@ -339,9 +339,11 @@ fn write_completions_to_file(
 
 fn generate_zsh_script_with_dynamic(bin_name: &str, cmd: &Command) -> String {
     let dynamic_plugins = get_dynamic_completion_plugins();
-    let mut script = String::new();
 
-    script.push_str(&format!(
+    let plugin_commands = build_zsh_plugin_command_entries(cmd);
+    let dynamic_cases = build_zsh_dynamic_cases(dynamic_plugins);
+
+    format!(
         r#"#compdef {bin_name}
 
 # Dynamic completion function for plugins
@@ -350,11 +352,11 @@ _adi_dynamic_complete() {{
     local pos=$2
     shift 2
     local words=("$@")
-    
+
     # Call the plugin's --completions command
     local completions
     completions=$({bin_name} "$cmd" --completions "$pos" "${{words[@]}}" 2>/dev/null)
-    
+
     if [[ -n "$completions" ]]; then
         local -a comp_array
         while IFS=$'\t' read -r comp desc; do
@@ -388,61 +390,52 @@ _adi() {{
                 'run:Run a plugin command'
                 'self-update:Update adi CLI'
                 'completions:Generate shell completions'
-"#
-    ));
-
-    for subcmd in cmd.get_subcommands() {
-        let name = subcmd.get_name();
-        let about = subcmd
-            .get_about()
-            .map(|s| s.to_string())
-            .unwrap_or_default();
-        if ![
-            "plugin",
-            "search",
-            "services",
-            "run",
-            "self-update",
-            "completions",
-        ]
-        .contains(&name)
-        {
-            script.push_str(&format!("                '{name}:{about}'\n"));
-        }
-    }
-
-    script.push_str(
-        r#"            )
+{plugin_commands}            )
             _describe -t commands 'adi commands' commands
             ;;
         args)
             case $line[1] in
-"#,
-    );
+{dynamic_cases}                *)
+                    _files
+                    ;;
+            esac
+            ;;
+    esac
+}}
 
+_adi "$@"
+"#
+    )
+}
+
+const ZSH_BUILTIN_COMMANDS: &[&str] = &[
+    "plugin", "search", "services", "run", "self-update", "completions",
+];
+
+fn build_zsh_plugin_command_entries(cmd: &Command) -> String {
+    let mut entries = String::new();
+    for subcmd in cmd.get_subcommands() {
+        let name = subcmd.get_name();
+        if ZSH_BUILTIN_COMMANDS.contains(&name) {
+            continue;
+        }
+        let about = subcmd.get_about().map(|s| s.to_string()).unwrap_or_default();
+        entries.push_str(&format!("                '{name}:{about}'\n"));
+    }
+    entries
+}
+
+fn build_zsh_dynamic_cases(dynamic_plugins: &[String]) -> String {
+    let mut cases = String::new();
     for plugin_cmd in dynamic_plugins {
-        script.push_str(&format!(
+        cases.push_str(&format!(
             r#"                {plugin_cmd})
                     _adi_dynamic_complete "{plugin_cmd}" $((CURRENT)) "${{words[@]:1}}"
                     ;;
 "#
         ));
     }
-
-    script.push_str(
-        r#"                *)
-                    _files
-                    ;;
-            esac
-            ;;
-    esac
-}
-
-_adi "$@"
-"#,
-    );
-
-    script
+    cases
 }
 
 fn generate_bash_script_with_dynamic(bin_name: &str, cmd: &Command) -> String {

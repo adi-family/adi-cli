@@ -229,7 +229,6 @@ impl PluginManager {
         }
 
         tracing::trace!(pattern = %pattern, "Installing plugins matching glob pattern");
-
         out_info!("{}", t!("plugin-install-pattern-searching", "pattern" => pattern));
 
         let matching = self.installer.find_matching(pattern).await?;
@@ -239,42 +238,49 @@ impl PluginManager {
             return Ok(());
         }
 
-        out_info!("{}", t!("plugin-install-pattern-found", "count" => &matching.len().to_string()));
+        Self::display_matching_plugins(&matching);
+        out_info!("{}", t!("plugin-install-pattern-installing", "count" => &matching.len().to_string()));
 
-        for plugin in &matching {
+        let failed = self.install_batch(&matching, version).await;
+
+        Self::report_batch_results(matching.len() - failed.len(), &failed);
+
+        Ok(())
+    }
+
+    fn display_matching_plugins(plugins: &[lib_plugin_registry::PluginEntry]) {
+        out_info!("{}", t!("plugin-install-pattern-found", "count" => &plugins.len().to_string()));
+        for plugin in plugins {
             out_info!("  {} {} - {}",
                 theme::brand_bold(&plugin.id),
                 theme::muted(format!("v{}", plugin.latest_version)),
                 plugin.description
             );
         }
+    }
 
-        out_info!("{}", t!("plugin-install-pattern-installing", "count" => &matching.len().to_string()));
-
-        let mut installed = 0;
+    async fn install_batch(
+        &self,
+        plugins: &[lib_plugin_registry::PluginEntry],
+        version: Option<&str>,
+    ) -> Vec<String> {
         let mut failed = Vec::new();
-
-        for plugin in &matching {
-            match self.install_with_dependencies(&plugin.id, version).await {
-                Ok(_) => {
-                    installed += 1;
-                }
-                Err(e) => {
-                    out_warn!("Failed to install {}: {}", plugin.id, e);
-                    failed.push(plugin.id.clone());
-                }
+        for plugin in plugins {
+            if let Err(e) = self.install_with_dependencies(&plugin.id, version).await {
+                out_warn!("Failed to install {}: {}", plugin.id, e);
+                failed.push(plugin.id.clone());
             }
         }
+        failed
+    }
 
+    fn report_batch_results(installed: usize, failed: &[String]) {
         out_success!("{}", t!("plugin-install-pattern-success", "count" => &installed.to_string()));
-
         if !failed.is_empty() {
             out_warn!("{}", t!("plugin-install-pattern-failed"));
             for id in failed {
                 out_warn!("  - {}", id);
             }
         }
-
-        Ok(())
     }
 }

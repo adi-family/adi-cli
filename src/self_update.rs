@@ -171,45 +171,9 @@ fn extract_binary(archive_path: &Path, temp_dir: &Path) -> Result<PathBuf> {
     tracing::trace!(archive = %archive_path.display(), binary_name = %binary_name, "Extracting binary from archive");
 
     if archive_path.extension().and_then(|s| s.to_str()) == Some("zip") {
-        tracing::trace!("Using zip extraction");
-        use std::io::Read;
-        use zip::ZipArchive;
-
-        let file = fs::File::open(archive_path)?;
-        let mut archive = ZipArchive::new(file)?;
-
-        for i in 0..archive.len() {
-            let mut file = archive.by_index(i)?;
-            if file.name() == binary_name {
-                let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer)?;
-                fs::write(&binary_path, buffer)?;
-                tracing::trace!("Binary extracted from zip");
-                break;
-            }
-        }
+        extract_from_zip(archive_path, binary_name, &binary_path)?;
     } else {
-        tracing::trace!("Using tar.gz extraction");
-        use flate2::read::GzDecoder;
-        use std::io::Read;
-        use tar::Archive;
-
-        let tar_gz = fs::File::open(archive_path)?;
-        let tar = GzDecoder::new(tar_gz);
-        let mut archive = Archive::new(tar);
-
-        for entry in archive.entries()? {
-            let mut entry = entry?;
-            let path = entry.path()?;
-
-            if path.file_name().and_then(|s| s.to_str()) == Some(binary_name) {
-                let mut buffer = Vec::new();
-                entry.read_to_end(&mut buffer)?;
-                fs::write(&binary_path, buffer)?;
-                tracing::trace!("Binary extracted from tar.gz");
-                break;
-            }
-        }
+        extract_from_tar_gz(archive_path, binary_name, &binary_path)?;
     }
 
     #[cfg(unix)]
@@ -222,6 +186,51 @@ fn extract_binary(archive_path: &Path, temp_dir: &Path) -> Result<PathBuf> {
     }
 
     Ok(binary_path)
+}
+
+fn extract_from_zip(archive_path: &Path, binary_name: &str, dest: &Path) -> Result<()> {
+    use std::io::Read;
+    use zip::ZipArchive;
+
+    tracing::trace!("Using zip extraction");
+    let file = fs::File::open(archive_path)?;
+    let mut archive = ZipArchive::new(file)?;
+
+    for i in 0..archive.len() {
+        let mut file = archive.by_index(i)?;
+        if file.name() != binary_name {
+            continue;
+        }
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        fs::write(dest, buffer)?;
+        tracing::trace!("Binary extracted from zip");
+        return Ok(());
+    }
+    Ok(())
+}
+
+fn extract_from_tar_gz(archive_path: &Path, binary_name: &str, dest: &Path) -> Result<()> {
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+    use tar::Archive;
+
+    tracing::trace!("Using tar.gz extraction");
+    let tar_gz = fs::File::open(archive_path)?;
+    let mut archive = Archive::new(GzDecoder::new(tar_gz));
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        if entry.path()?.file_name().and_then(|s| s.to_str()) != Some(binary_name) {
+            continue;
+        }
+        let mut buffer = Vec::new();
+        entry.read_to_end(&mut buffer)?;
+        fs::write(dest, buffer)?;
+        tracing::trace!("Binary extracted from tar.gz");
+        return Ok(());
+    }
+    Ok(())
 }
 
 fn replace_binary(new_binary: &Path, current_exe: &Path) -> Result<()> {

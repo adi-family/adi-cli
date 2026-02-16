@@ -21,6 +21,7 @@ const FALLBACK_CONFIG_DIR: &str = "~/.config";
 const ADI_SUBDIR: &str = "adi";
 const DEFAULT_REGISTRY_URL: &str = "https://adi-plugin-registry.the-ihor.com";
 const DEFAULT_SIGNALING_URL: &str = "wss://adi.the-ihor.com/api/signaling/ws";
+pub const CLI_PLUGIN_PREFIX: &str = "adi.cli.";
 
 /// ADI config directory ($ADI_CONFIG_DIR or ~/.config/adi)
 pub fn config_dir() -> PathBuf {

@@ -273,7 +273,6 @@ impl PluginRuntime {
 
     fn parse_cli_context(&self, context_json: &str) -> Result<lib_plugin_abi_v3::cli::CliContext> {
         use lib_plugin_abi_v3::cli::CliContext;
-        use std::collections::HashMap;
         use std::path::PathBuf;
 
         let value: serde_json::Value = serde_json::from_str(context_json)
@@ -303,33 +302,9 @@ impl PluginRuntime {
 
         let subcommand = args.first().cloned();
 
-        let mut options = HashMap::new();
-        if let Some(opts) = value.get("options").and_then(|v| v.as_object()) {
-            for (k, v) in opts {
-                options.insert(k.clone(), v.clone());
-            }
-        }
-
+        let mut options = Self::parse_json_options(&value);
         let remaining_args: Vec<String> = args.into_iter().skip(1).collect();
-        let mut positional_args = Vec::new();
-        let mut i = 0;
-        while i < remaining_args.len() {
-            let arg = &remaining_args[i];
-            if let Some(key) = arg.strip_prefix("--") {
-                if i + 1 < remaining_args.len() && !remaining_args[i + 1].starts_with("--") {
-                    options.insert(key.to_string(), serde_json::Value::String(remaining_args[i + 1].clone()));
-                    i += 2;
-                } else {
-                    options.insert(key.to_string(), serde_json::Value::Bool(true));
-                    i += 1;
-                }
-            } else {
-                positional_args.push(arg.clone());
-                i += 1;
-            }
-        }
-
-        let env = std::env::vars().collect();
+        let positional_args = Self::split_args_and_flags(&remaining_args, &mut options);
 
         Ok(CliContext {
             command,
@@ -337,8 +312,39 @@ impl PluginRuntime {
             args: positional_args,
             options,
             cwd,
-            env,
+            env: std::env::vars().collect(),
         })
+    }
+
+    fn parse_json_options(value: &serde_json::Value) -> std::collections::HashMap<String, serde_json::Value> {
+        value
+            .get("options")
+            .and_then(|v| v.as_object())
+            .map(|opts| opts.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+            .unwrap_or_default()
+    }
+
+    fn split_args_and_flags(
+        args: &[String],
+        options: &mut std::collections::HashMap<String, serde_json::Value>,
+    ) -> Vec<String> {
+        let mut positional = Vec::new();
+        let mut i = 0;
+        while i < args.len() {
+            let Some(key) = args[i].strip_prefix("--") else {
+                positional.push(args[i].clone());
+                i += 1;
+                continue;
+            };
+            if i + 1 < args.len() && !args[i + 1].starts_with("--") {
+                options.insert(key.to_string(), serde_json::Value::String(args[i + 1].clone()));
+                i += 2;
+            } else {
+                options.insert(key.to_string(), serde_json::Value::Bool(true));
+                i += 1;
+            }
+        }
+        positional
     }
 
     /// Uses command index for fast discovery, falls back to full scan.
