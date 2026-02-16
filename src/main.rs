@@ -14,7 +14,6 @@ use cli::completions;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Initialize tracing subscriber for trace logs
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
@@ -26,7 +25,6 @@ async fn main() -> anyhow::Result<()> {
 
     dotenvy::dotenv().ok();
 
-    // Auto-initialize completions on first run
     completions::ensure_completions_installed::<Cli>("adi");
 
     let cli = Cli::parse();

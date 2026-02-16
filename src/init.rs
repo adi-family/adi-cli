@@ -4,8 +4,6 @@ use dialoguer::{theme::ColorfulTheme, Select};
 use lib_console_output::{theme, out_info, out_success, out_warn};
 use lib_i18n_core::{init_global, I18n};
 
-/// Initialize the ADI theme from env var or user config.
-///
 /// Priority: ADI_THEME env var > config file theme > default ("indigo").
 pub(crate) fn initialize_theme() {
     let theme_id = cli::clienv::theme()
@@ -61,14 +59,11 @@ pub(crate) async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Resu
 
     tracing::trace!(lang = %user_lang, "Selected language");
 
-    // Initialize i18n with direct FTL file loading (no plugin service registry needed)
     let mut i18n = I18n::new_standalone();
 
-    // Load embedded English translations as fallback (always available)
     let _ = i18n.load_embedded("en-US", include_str!("../plugins/en-US/messages.ftl"));
     tracing::trace!("Loaded embedded en-US translations");
 
-    // Try to load additional language from installed plugins
     if user_lang != "en-US" {
         let translation_id = format!("adi.cli.{}", user_lang);
         tracing::trace!(translation_id = %translation_id, "Looking for translation plugin");
@@ -112,7 +107,6 @@ pub(crate) async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Resu
         }
     }
 
-    // Try to set requested language, fallback to en-US if not available
     if i18n.set_language(&user_lang).is_err() {
         tracing::trace!(lang = %user_lang, "Language not available, falling back to en-US");
         let _ = i18n.set_language("en-US");
@@ -123,8 +117,6 @@ pub(crate) async fn initialize_i18n(lang_override: Option<&str>) -> anyhow::Resu
     Ok(())
 }
 
-/// Discover available translation languages from the plugin registry.
-///
 /// Falls back to scanning installed plugins, then to just en-US (built-in).
 async fn get_available_languages() -> Vec<(String, String)> {
     tracing::trace!("Discovering available languages");
@@ -152,7 +144,6 @@ async fn get_available_languages() -> Vec<(String, String)> {
 
     tracing::trace!("Registry unreachable, scanning installed plugins for translations");
 
-    // Registry unreachable — scan installed plugins for translation metadata
     let plugins_dir = lib_plugin_host::PluginConfig::default_plugins_dir();
 
     if let Ok(mut entries) = tokio::fs::read_dir(&plugins_dir).await {
@@ -190,9 +181,6 @@ async fn get_available_languages() -> Vec<(String, String)> {
     languages
 }
 
-/// Prompt user to select their preferred language interactively.
-///
-/// Fetches the language list from plugins. If only en-US is available, skips the prompt.
 async fn prompt_language_selection() -> anyhow::Result<String> {
     let languages = get_available_languages().await;
 
@@ -218,7 +206,7 @@ async fn prompt_language_selection() -> anyhow::Result<String> {
     Ok(languages[selection].0.clone())
 }
 
-/// Check if we should attempt to download a translation plugin (once per day).
+/// Rate-limited to once per day.
 fn should_check_translation(plugins_dir: &std::path::Path, translation_id: &str) -> bool {
     let stamp = plugins_dir.join(format!(".{}.last-check", translation_id));
     let should = match std::fs::metadata(&stamp) {
@@ -233,7 +221,6 @@ fn should_check_translation(plugins_dir: &std::path::Path, translation_id: &str)
     should
 }
 
-/// Record that we just attempted to install a translation plugin.
 fn mark_translation_checked(plugins_dir: &std::path::Path, translation_id: &str) {
     let stamp = plugins_dir.join(format!(".{}.last-check", translation_id));
     let _ = std::fs::create_dir_all(plugins_dir);
@@ -241,7 +228,6 @@ fn mark_translation_checked(plugins_dir: &std::path::Path, translation_id: &str)
     tracing::trace!(translation_id = %translation_id, "Marked translation check timestamp");
 }
 
-/// Find the messages.ftl file in a plugin directory (handles versioned directories)
 fn find_messages_ftl(plugin_dir: &std::path::Path) -> Option<std::path::PathBuf> {
     tracing::trace!(dir = %plugin_dir.display(), "Searching for messages.ftl");
 

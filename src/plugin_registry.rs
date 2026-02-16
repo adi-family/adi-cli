@@ -9,10 +9,7 @@ use lib_plugin_registry::{PluginEntry, PluginInfo, SearchResults};
 
 use crate::error::Result;
 
-/// CLI plugin manager — thin UI wrapper over `PluginInstaller`.
-///
-/// Delegates all business logic to `PluginInstaller` from `lib-plugin-host`,
-/// adding progress bars, i18n messages, and user prompts.
+/// Thin UI wrapper over `PluginInstaller` (progress bars, i18n messages, prompts).
 pub struct PluginManager {
     installer: PluginInstaller,
 }
@@ -49,8 +46,6 @@ impl PluginManager {
             installer: PluginInstaller::from_config(&config),
         }
     }
-
-    // -- Delegated registry operations --
 
     pub async fn search(&self, query: &str) -> Result<SearchResults> {
         tracing::trace!(query = %query, "Searching plugin registry");
@@ -92,13 +87,10 @@ impl PluginManager {
         path
     }
 
-    // -- Install with UI --
-
     pub async fn install_plugin(&self, id: &str, version: Option<&str>) -> Result<()> {
         let platform = lib_plugin_manifest::current_platform();
         tracing::trace!(id = %id, version = ?version, platform = %platform, "Installing plugin");
 
-        // Fetch info for pre-download message and progress bar sizing
         let info = self.installer.get_plugin_info(id).await?;
         let info = info.ok_or_else(|| {
             crate::error::InstallerError::PluginNotFound { id: id.to_string() }
@@ -157,12 +149,10 @@ impl PluginManager {
         Ok(())
     }
 
-    /// Install a plugin and all its dependencies with UI feedback.
     pub async fn install_with_dependencies(&self, id: &str, version: Option<&str>) -> Result<()> {
         tracing::trace!(id = %id, version = ?version, "Installing plugin with dependencies");
         let mut installing = HashSet::new();
 
-        // Check if already installed — provide user feedback
         if let Some(current_version) = self.installer.is_installed(id) {
             let prefix = t!("common-info-prefix");
             let msg = t!("plugin-install-already-installed",
@@ -193,10 +183,8 @@ impl PluginManager {
             return Ok(());
         }
 
-        // Install with UI (progress bar, messages)
         self.install_plugin(id, version).await?;
 
-        // Check dependencies using the library
         let deps = self.installer.get_dependencies(id);
         tracing::trace!(id = %id, deps = ?deps, "Checking plugin dependencies");
         for dep in deps {
@@ -208,8 +196,6 @@ impl PluginManager {
 
         Ok(())
     }
-
-    // -- Uninstall with UI --
 
     pub async fn uninstall_plugin(&self, id: &str) -> Result<()> {
         tracing::trace!(id = %id, "Uninstalling plugin");
@@ -226,8 +212,6 @@ impl PluginManager {
 
         Ok(())
     }
-
-    // -- Update with UI --
 
     pub async fn update_plugin(&self, id: &str) -> Result<()> {
         tracing::trace!(id = %id, "Checking for plugin update");
@@ -249,7 +233,6 @@ impl PluginManager {
                     )
                 );
 
-                // Install the new version with UI
                 self.install_plugin(id, Some(&latest)).await?;
             }
         }
@@ -257,9 +240,6 @@ impl PluginManager {
         Ok(())
     }
 
-    // -- Glob pattern install with UI --
-
-    /// Install all plugins matching a glob pattern (e.g., "adi.lang.*")
     pub async fn install_plugins_matching(
         &self,
         pattern: &str,

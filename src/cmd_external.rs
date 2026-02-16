@@ -19,7 +19,6 @@ pub(crate) async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
 
     let mut runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
 
-    // Discover CLI commands (fast - only reads manifests, no binary loading)
     let cli_commands = runtime.discover_cli_commands();
 
     let matching_plugin = cli_commands
@@ -68,21 +67,14 @@ pub(crate) async fn cmd_external(args: Vec<String>) -> anyhow::Result<()> {
     }
 }
 
-/// Result of plugin auto-installation attempt.
 enum AutoinstallResult {
-    /// Plugin was installed successfully, contains the plugin ID
     Installed(String),
-    /// No plugin found in registry providing this command
     NotFound,
-    /// User declined installation
     Declined,
-    /// Installation failed
     Failed,
 }
 
-/// Try to auto-install a plugin that provides the given command.
-///
-/// The plugin ID is inferred from the command name using the pattern `adi.cli.{command}`.
+/// Plugin ID is inferred using the pattern `adi.cli.{command}`.
 async fn try_autoinstall_plugin(
     command: &str,
     cli_commands: &[cli::plugin_runtime::PluginCliCommand],

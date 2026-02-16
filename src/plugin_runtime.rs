@@ -1,8 +1,4 @@
-//! Plugin runtime for loading and managing plugins.
-//!
-//! Provides a unified interface for loading plugins, registering services,
-//! and dispatching requests to plugin-provided HTTP/CLI handlers.
-//!
+//! Plugin runtime — loads plugins and dispatches CLI/HTTP requests.
 //! All plugins use the v3 ABI (lib_plugin_abi_v3).
 
 use std::path::PathBuf;
@@ -13,32 +9,21 @@ use lib_plugin_manifest::PluginManifest;
 
 use crate::error::Result;
 
-/// A discovered CLI command from a plugin manifest.
-/// This is discovered by scanning plugin.toml files without loading binaries.
+/// Discovered from plugin.toml manifests without loading binaries.
 #[derive(Debug, Clone)]
 pub struct PluginCliCommand {
-    /// The command name (e.g., "tasks", "lint")
     pub command: String,
-    /// The plugin ID that provides this command
     pub plugin_id: String,
-    /// Human-readable description
     pub description: String,
-    /// Optional short aliases
     pub aliases: Vec<String>,
 }
 
-/// Plugin runtime configuration.
 #[derive(Debug, Clone)]
 pub struct RuntimeConfig {
-    /// Directory containing installed plugins.
     pub plugins_dir: PathBuf,
-    /// Directory for plugin cache.
     pub cache_dir: PathBuf,
-    /// Registry URL for downloading plugins.
     pub registry_url: Option<String>,
-    /// Whether to require plugin signatures.
     pub require_signatures: bool,
-    /// Host version for compatibility checking.
     pub host_version: String,
 }
 
@@ -54,7 +39,6 @@ impl Default for RuntimeConfig {
     }
 }
 
-/// Plugin runtime managing plugin lifecycle and service dispatch.
 /// Uses RwLock because PluginManagerV3 requires mutable access for registration.
 pub struct PluginRuntime {
     manager_v3: Arc<RwLock<PluginManagerV3>>,
@@ -62,12 +46,10 @@ pub struct PluginRuntime {
 }
 
 impl PluginRuntime {
-    /// Create a new plugin runtime with the given configuration.
     #[allow(clippy::arc_with_non_send_sync)]
     pub async fn new(config: RuntimeConfig) -> Result<Self> {
         tracing::trace!(plugins_dir = %config.plugins_dir.display(), cache_dir = %config.cache_dir.display(), "Creating plugin runtime");
 
-        // Ensure directories exist
         std::fs::create_dir_all(&config.plugins_dir)?;
         std::fs::create_dir_all(&config.cache_dir)?;
 
@@ -80,19 +62,15 @@ impl PluginRuntime {
         })
     }
 
-    /// Create a runtime with default configuration.
     pub async fn with_defaults() -> Result<Self> {
         Self::new(RuntimeConfig::default()).await
     }
 
-    /// Get the runtime configuration.
     pub fn config(&self) -> &RuntimeConfig {
         &self.config
     }
 
-    /// Scan and load all installed plugins.
     pub async fn load_all_plugins(&self) -> Result<()> {
-        // Scan plugins directory for installed plugins
         let plugins_dir = &self.config.plugins_dir;
         if !plugins_dir.exists() {
             tracing::trace!(dir = %plugins_dir.display(), "Plugins directory does not exist, skipping load");
@@ -128,20 +106,16 @@ impl PluginRuntime {
         Ok(())
     }
 
-    /// Internal method to load a plugin
     async fn load_plugin_internal(&self, plugin_id: &str) -> Result<()> {
         tracing::trace!(plugin_id = %plugin_id, "Finding plugin manifest");
 
-        // Find the plugin manifest
         let manifest = self.find_plugin_manifest(plugin_id)?;
 
         tracing::trace!(plugin_id = %plugin_id, version = %manifest.plugin.version, "Manifest found, loading v3 plugin");
 
-        // All plugins use v3 ABI
         self.load_v3_plugin(&manifest).await
     }
 
-    /// Load a v3 plugin
     async fn load_v3_plugin(&self, manifest: &PluginManifest) -> Result<()> {
         let plugin_dir = self.resolve_plugin_dir(&manifest.plugin.id)?;
         tracing::trace!(plugin_id = %manifest.plugin.id, dir = %plugin_dir.display(), "Loading v3 plugin binary");
@@ -150,7 +124,6 @@ impl PluginRuntime {
             Ok(loaded) => {
                 let plugin_id = manifest.plugin.id.clone();
 
-                // Register the plugin
                 self.manager_v3.write().unwrap().register(loaded)?;
 
                 tracing::info!("Loaded v3 plugin: {}", plugin_id);
@@ -166,7 +139,6 @@ impl PluginRuntime {
         }
     }
 
-    /// Find plugin manifest by ID
     fn find_plugin_manifest(&self, plugin_id: &str) -> Result<PluginManifest> {
         let plugin_dir = self.config.plugins_dir.join(plugin_id);
         tracing::trace!(plugin_id = %plugin_id, dir = %plugin_dir.display(), "Searching for plugin manifest");
@@ -183,9 +155,7 @@ impl PluginRuntime {
         }
     }
 
-    /// Resolve the plugin directory (handles versioned directories).
-    ///
-    /// Prefers the `latest` symlink for O(1) resolution, falls back to `.version` file.
+    /// Prefers the `latest` symlink, falls back to `.version` file.
     fn resolve_plugin_dir(&self, plugin_id: &str) -> Result<PathBuf> {
         let plugin_dir = self.config.plugins_dir.join(plugin_id);
 
@@ -216,21 +186,16 @@ impl PluginRuntime {
         Ok(plugin_dir)
     }
 
-    /// Load a specific plugin by ID.
     pub async fn load_plugin(&self, plugin_id: &str) -> Result<()> {
         tracing::trace!(plugin_id = %plugin_id, "Loading single plugin");
         self.load_plugin_internal(plugin_id).await
     }
 
-    /// Scan installed plugins and load a specific plugin by ID.
-    /// This is useful when you only want to load one plugin without loading all.
     pub async fn scan_and_load_plugin(&self, plugin_id: &str) -> Result<()> {
         tracing::trace!(plugin_id = %plugin_id, "Scan-and-load single plugin");
-        // Load the specific plugin
         self.load_plugin_internal(plugin_id).await
     }
 
-    /// List installed plugins.
     pub fn list_installed(&self) -> Vec<String> {
         self.manager_v3
             .read()
@@ -241,8 +206,6 @@ impl PluginRuntime {
             .collect()
     }
 
-    /// List plugins with runnable CLI interfaces.
-    /// Returns (plugin_id, description) for each plugin with CLI commands.
     pub fn list_runnable_plugins(&self) -> Vec<(String, String)> {
         self.manager_v3
             .read()
@@ -250,7 +213,6 @@ impl PluginRuntime {
             .all_cli_commands()
             .into_iter()
             .map(|(id, _)| {
-                // Get description from plugin metadata if available
                 let description = self
                     .manager_v3
                     .read()
@@ -263,12 +225,10 @@ impl PluginRuntime {
             .collect()
     }
 
-    /// Get a log provider for a specific plugin.
     pub fn get_log_provider(&self, plugin_id: &str) -> Option<std::sync::Arc<dyn lib_plugin_abi_v3::logs::LogProvider>> {
         self.manager_v3.read().unwrap().get_log_provider(plugin_id)
     }
 
-    /// Run a CLI command for a specific plugin. Returns result string.
     pub async fn run_cli_command(&self, plugin_id: &str, context_json: &str) -> Result<String> {
         tracing::trace!(plugin_id = %plugin_id, "Running CLI command");
 
@@ -279,10 +239,9 @@ impl PluginRuntime {
                 id: plugin_id.to_string(),
             })?;
 
-        // Parse context and call async method
         let ctx = self.parse_cli_context(context_json)?;
         tracing::trace!(plugin_id = %plugin_id, command = %ctx.command, subcommand = ?ctx.subcommand, args = ?ctx.args, "Dispatching command to plugin");
-        drop(manager); // Release lock before async call
+        drop(manager);
 
         let result = plugin
             .run_command(&ctx)
@@ -291,7 +250,6 @@ impl PluginRuntime {
 
         tracing::trace!(plugin_id = %plugin_id, exit_code = result.exit_code, "Plugin command completed");
 
-        // Format result as JSON for compatibility
         Ok(serde_json::to_string(&serde_json::json!({
             "exit_code": result.exit_code,
             "stdout": result.stdout,
@@ -300,7 +258,6 @@ impl PluginRuntime {
         .unwrap())
     }
 
-    /// List CLI commands for a specific plugin. Returns JSON array of commands.
     pub async fn list_cli_commands(&self, plugin_id: &str) -> Result<String> {
         let manager = self.manager_v3.read().unwrap();
         let plugin = manager
@@ -308,23 +265,20 @@ impl PluginRuntime {
             .ok_or_else(|| crate::error::InstallerError::PluginNotFound {
                 id: plugin_id.to_string(),
             })?;
-        drop(manager); // Release lock before async call
+        drop(manager);
 
         let commands = plugin.list_commands().await;
         Ok(serde_json::to_string(&commands).unwrap())
     }
 
-    /// Parse JSON context into CliContext for v3 plugins
     fn parse_cli_context(&self, context_json: &str) -> Result<lib_plugin_abi_v3::cli::CliContext> {
         use lib_plugin_abi_v3::cli::CliContext;
         use std::collections::HashMap;
         use std::path::PathBuf;
 
-        // Parse the JSON context
         let value: serde_json::Value = serde_json::from_str(context_json)
             .map_err(|e| crate::error::InstallerError::Other(e.to_string()))?;
 
-        // Extract fields
         let command = value
             .get("command")
             .and_then(|v| v.as_str())
@@ -347,10 +301,8 @@ impl PluginRuntime {
             .map(PathBuf::from)
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
-        // Extract subcommand (first arg if present)
         let subcommand = args.first().cloned();
 
-        // Build options map: first from explicit "options" field, then parse --flags from args
         let mut options = HashMap::new();
         if let Some(opts) = value.get("options").and_then(|v| v.as_object()) {
             for (k, v) in opts {
@@ -358,14 +310,12 @@ impl PluginRuntime {
             }
         }
 
-        // Parse --flags and --key value from args (skip subcommand at index 0)
         let remaining_args: Vec<String> = args.into_iter().skip(1).collect();
         let mut positional_args = Vec::new();
         let mut i = 0;
         while i < remaining_args.len() {
             let arg = &remaining_args[i];
             if let Some(key) = arg.strip_prefix("--") {
-                // Check if next arg is a value (not another flag)
                 if i + 1 < remaining_args.len() && !remaining_args[i + 1].starts_with("--") {
                     options.insert(key.to_string(), serde_json::Value::String(remaining_args[i + 1].clone()));
                     i += 2;
@@ -379,7 +329,6 @@ impl PluginRuntime {
             }
         }
 
-        // Get environment variables
         let env = std::env::vars().collect();
 
         Ok(CliContext {
@@ -392,11 +341,7 @@ impl PluginRuntime {
         })
     }
 
-    /// Discover CLI commands from installed plugin manifests.
-    ///
-    /// Uses the command index (symlinks in `commands/` dir) for fast discovery.
-    /// Falls back to a full directory scan if the index is missing or empty,
-    /// and rebuilds the index as a side effect.
+    /// Uses command index for fast discovery, falls back to full scan.
     pub fn discover_cli_commands(&self) -> Vec<PluginCliCommand> {
         tracing::trace!("Discovering CLI commands");
 
@@ -406,7 +351,6 @@ impl PluginRuntime {
             return Vec::new();
         }
 
-        // Fast path: use command index
         let cmds_dir = lib_plugin_host::command_index::commands_dir(plugins_dir);
         if cmds_dir.exists() {
             let indexed = lib_plugin_host::command_index::list_indexed_commands(plugins_dir);
@@ -416,7 +360,6 @@ impl PluginRuntime {
             }
         }
 
-        // Fallback: full scan, then rebuild index
         tracing::trace!("Command index missing or empty, falling back to full scan");
         let commands = self.discover_cli_commands_full_scan();
 
@@ -427,7 +370,6 @@ impl PluginRuntime {
         commands
     }
 
-    /// Build PluginCliCommand list from resolved index entries.
     /// Deduplicates by manifest path (aliases point to same manifest).
     fn commands_from_index(indexed: Vec<(String, PathBuf)>) -> Vec<PluginCliCommand> {
         let mut seen = std::collections::HashMap::<PathBuf, PluginCliCommand>::new();
@@ -455,8 +397,6 @@ impl PluginRuntime {
         seen.into_values().collect()
     }
 
-    /// Full directory scan for CLI commands (original discovery logic).
-    /// Used as fallback when command index is unavailable.
     fn discover_cli_commands_full_scan(&self) -> Vec<PluginCliCommand> {
         let mut commands = Vec::new();
         let plugins_dir = &self.config.plugins_dir;
@@ -468,7 +408,6 @@ impl PluginRuntime {
                     continue;
                 }
 
-                // Skip the command index directory
                 if entry.file_name() == lib_plugin_host::command_index::COMMANDS_DIR_NAME {
                     continue;
                 }
@@ -494,10 +433,8 @@ impl PluginRuntime {
         commands
     }
 
-    /// Find the plugin.toml manifest in a plugin directory.
     /// Handles versioned directories (e.g., plugins/adi.tasks/0.8.8/plugin.toml)
     fn find_plugin_toml_path(plugin_dir: &PathBuf) -> Option<PathBuf> {
-        // First, check for .version file to get current version
         let version_file = plugin_dir.join(".version");
         if version_file.exists() {
             if let Ok(version) = std::fs::read_to_string(&version_file) {
@@ -510,14 +447,12 @@ impl PluginRuntime {
             }
         }
 
-        // Fallback: check for plugin.toml directly in plugin dir
         let direct_manifest = plugin_dir.join("plugin.toml");
         if direct_manifest.exists() {
             tracing::trace!(path = %direct_manifest.display(), "Found direct plugin.toml");
             return Some(direct_manifest);
         }
 
-        // Fallback: scan subdirectories for plugin.toml
         if let Ok(entries) = std::fs::read_dir(plugin_dir) {
             for entry in entries.flatten() {
                 let subdir = entry.path();
@@ -535,14 +470,12 @@ impl PluginRuntime {
         None
     }
 
-    /// Find a plugin ID by command name or alias.
-    /// Uses the command index for O(1) lookup, falls back to full discovery.
+    /// Uses command index for O(1) lookup, falls back to full discovery.
     pub fn find_plugin_by_command(&self, command: &str) -> Option<String> {
         tracing::trace!(command = %command, "Looking up plugin by command name or alias");
 
         let plugins_dir = &self.config.plugins_dir;
 
-        // O(1) path: resolve single symlink, verify it still has a [cli] section
         if let Some(manifest_path) =
             lib_plugin_host::command_index::resolve_command(plugins_dir, command)
         {
@@ -554,7 +487,6 @@ impl PluginRuntime {
             }
         }
 
-        // Fallback: full discovery
         tracing::trace!(command = %command, "Command index miss, falling back to full scan");
         let commands = self.discover_cli_commands();
         let result = commands

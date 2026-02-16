@@ -64,9 +64,6 @@ pub(crate) async fn cmd_run(plugin_id: Option<String>, args: Vec<String>) -> any
     }
 }
 
-/// Handle CLI result from plugin execution.
-/// Parses the JSON result and outputs stdout/stderr appropriately,
-/// then exits with the correct exit code.
 pub(crate) fn handle_cli_result(result_json: &str) {
     #[derive(serde::Deserialize)]
     struct CliResult {

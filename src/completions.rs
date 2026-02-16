@@ -1,12 +1,7 @@
 //! Shell completion generation with dynamic plugin support.
 //!
-//! It's the glue that makes `adi <Tab>` work in bash/zsh/fish,
-//! including plugin commands that aren't compiled into the binary.
-//!
-//! Generates shell completions that include both static CLI commands
-//! and dynamically discovered plugin commands from installed manifests.
-//! Used by `adi completions <shell>` and auto-invoked on every CLI run
-//! via `ensure_completions_installed` to keep completions up-to-date.
+//! Makes `adi <Tab>` work in bash/zsh/fish, including plugin commands
+//! discovered from installed manifests. Auto-invoked on every CLI run.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -14,7 +9,6 @@ use std::path::PathBuf;
 use clap::{Command, CommandFactory, ValueEnum};
 use clap_complete::{generate, Shell};
 
-/// Supported shells for completion generation.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum CompletionShell {
     Bash,
@@ -36,18 +30,11 @@ impl From<CompletionShell> for Shell {
     }
 }
 
-/// Generate shell completions with dynamic plugin commands.
-///
-/// This builds a clap Command that includes both static commands
-/// and plugin-provided commands discovered from manifests.
 pub fn generate_completions<C: CommandFactory>(shell: CompletionShell, bin_name: &str) {
     tracing::trace!(shell = ?shell, bin_name = %bin_name, "Generating shell completions");
     let mut cmd = C::command();
-
-    // Add plugin commands by reading manifests directly (no async needed)
     cmd = add_plugin_commands_from_manifests(cmd);
 
-    // For shells that support dynamic completions, generate enhanced scripts
     match shell {
         CompletionShell::Zsh => {
             generate_zsh_with_dynamic(bin_name, &cmd);
@@ -59,19 +46,16 @@ pub fn generate_completions<C: CommandFactory>(shell: CompletionShell, bin_name:
             generate_fish_with_dynamic(bin_name, &cmd);
         }
         _ => {
-            // Fallback to standard clap completions for other shells
             let shell_type: Shell = shell.into();
             generate(shell_type, &mut cmd, bin_name, &mut std::io::stdout());
         }
     }
 }
 
-/// Generate Zsh completions with dynamic plugin support (to stdout)
 fn generate_zsh_with_dynamic(bin_name: &str, cmd: &Command) {
     let dynamic_plugins = get_dynamic_completion_plugins();
 
     if dynamic_plugins.is_empty() {
-        // No dynamic plugins, use standard completions
         generate(
             Shell::Zsh,
             &mut cmd.clone(),
@@ -84,12 +68,10 @@ fn generate_zsh_with_dynamic(bin_name: &str, cmd: &Command) {
     print!("{}", generate_zsh_script_with_dynamic(bin_name, cmd));
 }
 
-/// Generate Bash completions with dynamic plugin support (to stdout)
 fn generate_bash_with_dynamic(bin_name: &str, cmd: &Command) {
     let dynamic_plugins = get_dynamic_completion_plugins();
 
     if dynamic_plugins.is_empty() {
-        // No dynamic plugins, use standard completions
         generate(
             Shell::Bash,
             &mut cmd.clone(),
@@ -102,12 +84,10 @@ fn generate_bash_with_dynamic(bin_name: &str, cmd: &Command) {
     print!("{}", generate_bash_script_with_dynamic(bin_name, cmd));
 }
 
-/// Generate Fish completions with dynamic plugin support (to stdout)
 fn generate_fish_with_dynamic(bin_name: &str, cmd: &Command) {
     let dynamic_plugins = get_dynamic_completion_plugins();
 
     if dynamic_plugins.is_empty() {
-        // No dynamic plugins, use standard completions
         generate(
             Shell::Fish,
             &mut cmd.clone(),
@@ -120,17 +100,13 @@ fn generate_fish_with_dynamic(bin_name: &str, cmd: &Command) {
     print!("{}", generate_fish_script_with_dynamic(bin_name, cmd));
 }
 
-/// Track plugins with dynamic completions
 static DYNAMIC_COMPLETION_PLUGINS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 
-/// Get list of plugins that support dynamic completions
 pub fn get_dynamic_completion_plugins() -> &'static Vec<String> {
     DYNAMIC_COMPLETION_PLUGINS.get_or_init(Vec::new)
 }
 
-/// Discover and add plugin commands by reading manifest files directly.
-/// This avoids needing a tokio runtime by reading files synchronously.
-/// Uses the command index (symlinks) for fast discovery, falls back to full scan.
+/// Reads manifest files synchronously (no tokio runtime needed).
 fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
     use lib_plugin_manifest::PluginManifest;
 
@@ -144,13 +120,12 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
     tracing::trace!(dir = %plugins_dir.display(), "Discovering plugin commands for completions");
     let mut dynamic_plugins = Vec::new();
 
-    // Collect unique manifest paths to parse
     let manifest_paths = collect_cli_manifest_paths(&plugins_dir);
 
     for manifest_path in manifest_paths {
         if let Ok(manifest) = PluginManifest::from_file(&manifest_path) {
             if let Some(cli) = &manifest.cli {
-                // Leak strings to get 'static lifetime required by clap
+                // Leak to get 'static lifetime required by clap
                 let name: &'static str = Box::leak(cli.command.clone().into_boxed_str());
                 let desc: &'static str = Box::leak(cli.description.clone().into_boxed_str());
 
@@ -164,7 +139,6 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
                     subcmd = subcmd.visible_alias(alias_static);
                 }
 
-                // Track if this plugin supports dynamic completions
                 if cli.dynamic_completions {
                     dynamic_plugins.push(cli.command.clone());
                 }
@@ -177,20 +151,16 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
 
     tracing::trace!(dynamic_count = dynamic_plugins.len(), "Plugin manifest scan complete");
 
-    // Store dynamic completion plugins for later use
     let _ = DYNAMIC_COMPLETION_PLUGINS.set(dynamic_plugins);
 
     cmd
 }
 
-/// Collect unique manifest paths for plugins with CLI commands.
-/// Tries the command index first, falls back to full directory scan.
 fn collect_cli_manifest_paths(plugins_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     use std::collections::HashSet;
 
     let cmds_dir = lib_plugin_host::command_index::commands_dir(plugins_dir);
 
-    // Fast path: use command index
     if cmds_dir.exists() {
         let indexed = lib_plugin_host::command_index::list_indexed_commands(plugins_dir);
         if !indexed.is_empty() {
@@ -209,7 +179,6 @@ fn collect_cli_manifest_paths(plugins_dir: &std::path::Path) -> Vec<std::path::P
         }
     }
 
-    // Fallback: full scan
     tracing::trace!("Command index unavailable, falling back to full scan for completions");
     let mut paths = Vec::new();
     if let Ok(entries) = std::fs::read_dir(plugins_dir) {
@@ -229,9 +198,7 @@ fn collect_cli_manifest_paths(plugins_dir: &std::path::Path) -> Vec<std::path::P
     paths
 }
 
-/// Find the plugin.toml manifest in a plugin directory.
 fn find_plugin_manifest(plugin_dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    // First, check for .version file to get current version
     let version_file = plugin_dir.join(".version");
     if version_file.exists() {
         if let Ok(version) = std::fs::read_to_string(&version_file) {
@@ -243,13 +210,11 @@ fn find_plugin_manifest(plugin_dir: &std::path::Path) -> Option<std::path::PathB
         }
     }
 
-    // Fallback: check for plugin.toml directly in plugin dir
     let direct_manifest = plugin_dir.join("plugin.toml");
     if direct_manifest.exists() {
         return Some(direct_manifest);
     }
 
-    // Fallback: scan subdirectories for plugin.toml
     if let Ok(entries) = std::fs::read_dir(plugin_dir) {
         for entry in entries.flatten() {
             let subdir = entry.path();
@@ -265,13 +230,11 @@ fn find_plugin_manifest(plugin_dir: &std::path::Path) -> Option<std::path::PathB
     None
 }
 
-/// Get the shell configuration file path for the current shell.
 pub fn get_shell_config_path(shell: CompletionShell) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
 
     match shell {
         CompletionShell::Bash => {
-            // Check for .bash_profile first (macOS), then .bashrc (Linux)
             let bash_profile = home.join(".bash_profile");
             let bashrc = home.join(".bashrc");
             if bash_profile.exists() {
@@ -289,14 +252,12 @@ pub fn get_shell_config_path(shell: CompletionShell) -> Option<PathBuf> {
     }
 }
 
-/// Get the completions directory for a shell.
 pub fn get_completions_dir(shell: CompletionShell) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let data_dir = dirs::data_local_dir().unwrap_or_else(|| home.join(".local/share"));
 
     match shell {
         CompletionShell::Bash => {
-            // Try XDG location first, then fallback
             let xdg = data_dir.join("bash-completion/completions");
             if xdg.parent().map(|p| p.exists()).unwrap_or(false) {
                 Some(xdg)
@@ -305,7 +266,6 @@ pub fn get_completions_dir(shell: CompletionShell) -> Option<PathBuf> {
             }
         }
         CompletionShell::Zsh => {
-            // Try common zsh completions directories
             let zsh_funcs = home.join(".zfunc");
             Some(zsh_funcs)
         }
@@ -315,7 +275,6 @@ pub fn get_completions_dir(shell: CompletionShell) -> Option<PathBuf> {
     }
 }
 
-/// Get the completion file name for a shell.
 pub fn get_completion_filename(shell: CompletionShell, bin_name: &str) -> String {
     match shell {
         CompletionShell::Bash => format!("{}.bash", bin_name),
@@ -326,8 +285,6 @@ pub fn get_completion_filename(shell: CompletionShell, bin_name: &str) -> String
     }
 }
 
-/// Initialize shell completions by writing to the appropriate location
-/// and updating shell configuration if needed.
 pub fn init_completions<C: CommandFactory>(
     shell: CompletionShell,
     bin_name: &str,
@@ -336,22 +293,15 @@ pub fn init_completions<C: CommandFactory>(
     let completions_dir = get_completions_dir(shell)
         .ok_or_else(|| anyhow::anyhow!("Could not determine completions directory"))?;
 
-    // Create directory if it doesn't exist
     std::fs::create_dir_all(&completions_dir)?;
 
     let completion_file = completions_dir.join(get_completion_filename(shell, bin_name));
 
-    // Generate completions to file
     let file = std::fs::File::create(&completion_file)?;
     let mut cmd = C::command();
-
-    // Add plugin commands (sync version, no runtime needed)
     cmd = add_plugin_commands_from_manifests(cmd);
-
-    // Generate with dynamic completion support
     write_completions_to_file(shell, bin_name, &cmd, file)?;
 
-    // For some shells, we need to update the rc file
     match shell {
         CompletionShell::Zsh => {
             add_to_shell_config(
@@ -385,7 +335,6 @@ autoload -Uz compinit && compinit
     Ok(completion_file)
 }
 
-/// Write completions to a file with dynamic plugin support
 fn write_completions_to_file(
     shell: CompletionShell,
     bin_name: &str,
@@ -418,7 +367,6 @@ fn write_completions_to_file(
     Ok(())
 }
 
-/// Generate Zsh script as a String (for file writing)
 fn generate_zsh_script_with_dynamic(bin_name: &str, cmd: &Command) -> String {
     let dynamic_plugins = get_dynamic_completion_plugins();
     let mut script = String::new();
@@ -473,7 +421,6 @@ _adi() {{
 "#
     ));
 
-    // Add plugin commands
     for subcmd in cmd.get_subcommands() {
         let name = subcmd.get_name();
         let about = subcmd
@@ -528,7 +475,6 @@ _adi "$@"
     script
 }
 
-/// Generate Bash script as a String (for file writing)
 fn generate_bash_script_with_dynamic(bin_name: &str, cmd: &Command) -> String {
     let dynamic_plugins = get_dynamic_completion_plugins();
     let subcommands: Vec<&str> = cmd.get_subcommands().map(|c| c.get_name()).collect();
@@ -592,7 +538,6 @@ complete -F _{bin_name} {bin_name}
     )
 }
 
-/// Generate Fish script as a String (for file writing)
 fn generate_fish_script_with_dynamic(bin_name: &str, cmd: &Command) -> String {
     let dynamic_plugins = get_dynamic_completion_plugins();
     let mut script = String::new();
@@ -625,7 +570,6 @@ complete -c {bin_name} -f
 "#
     ));
 
-    // Add static subcommand completions
     for subcmd in cmd.get_subcommands() {
         let name = subcmd.get_name();
         let about = subcmd
@@ -647,7 +591,6 @@ complete -c {bin_name} -f
 
     script.push('\n');
 
-    // Add dynamic completions for supported plugins
     for plugin_cmd in dynamic_plugins {
         script.push_str(&format!(
             r#"# Dynamic completions for {plugin_cmd}
@@ -659,20 +602,16 @@ complete -c {bin_name} -n "__fish_seen_subcommand_from {plugin_cmd}" -a "(__adi_
     script
 }
 
-/// Add a configuration snippet to the shell config file if not already present.
 fn add_to_shell_config(shell: CompletionShell, snippet: &str) -> anyhow::Result<()> {
     let config_path = get_shell_config_path(shell)
         .ok_or_else(|| anyhow::anyhow!("Could not determine shell config path"))?;
 
-    // Read existing config
     let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
 
-    // Check if ADI completions are already configured
     if existing.contains("# ADI CLI completions") {
         return Ok(());
     }
 
-    // Append to config
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -683,10 +622,9 @@ fn add_to_shell_config(shell: CompletionShell, snippet: &str) -> anyhow::Result<
     Ok(())
 }
 
-/// Regenerate completions (called after plugin install/uninstall).
+/// Called after plugin install/uninstall.
 pub fn regenerate_completions<C: CommandFactory>(bin_name: &str) -> anyhow::Result<()> {
     tracing::trace!(bin_name = %bin_name, "Regenerating completions for installed shells");
-    // Try to regenerate for all shells that have completions installed
     for shell in [
         CompletionShell::Bash,
         CompletionShell::Zsh,
@@ -696,14 +634,9 @@ pub fn regenerate_completions<C: CommandFactory>(bin_name: &str) -> anyhow::Resu
             let file_path = dir.join(get_completion_filename(shell, bin_name));
             if file_path.exists() {
                 tracing::trace!(shell = ?shell, path = %file_path.display(), "Regenerating completion file");
-                // Regenerate this completion file
                 let file = std::fs::File::create(&file_path)?;
                 let mut cmd = C::command();
-
-                // Add plugin commands (sync version, no runtime needed)
                 cmd = add_plugin_commands_from_manifests(cmd);
-
-                // Use the new dynamic-aware writing function
                 write_completions_to_file(shell, bin_name, &cmd, file)?;
             }
         }
@@ -712,7 +645,6 @@ pub fn regenerate_completions<C: CommandFactory>(bin_name: &str) -> anyhow::Resu
     Ok(())
 }
 
-/// Detect the current shell from environment.
 pub fn detect_shell() -> Option<CompletionShell> {
     std::env::var("SHELL").ok().and_then(|s| {
         tracing::trace!(shell_env = %s, "Detecting shell from $SHELL");
@@ -732,8 +664,7 @@ pub fn detect_shell() -> Option<CompletionShell> {
     })
 }
 
-/// Ensure shell completions are installed (called automatically on every run).
-/// This is idempotent and optimized - only regenerates when plugins change.
+/// Idempotent — only regenerates when plugins change.
 pub fn ensure_completions_installed<C: CommandFactory>(bin_name: &str) {
     let Some(shell) = detect_shell() else {
         tracing::trace!("Could not detect shell, skipping completions");
@@ -748,7 +679,6 @@ pub fn ensure_completions_installed<C: CommandFactory>(bin_name: &str) {
     let completion_file = completions_dir.join(get_completion_filename(shell, bin_name));
     let marker_file = completions_dir.join(format!(".{}-installed", bin_name));
 
-    // Check if we need to regenerate completions
     let needs_shell_config = !marker_file.exists();
     let needs_regenerate = needs_shell_config || completions_outdated(&completion_file);
 
@@ -759,40 +689,31 @@ pub fn ensure_completions_installed<C: CommandFactory>(bin_name: &str) {
 
     tracing::trace!(shell = ?shell, needs_shell_config = needs_shell_config, "Regenerating completions");
 
-    // Create completions directory
     if std::fs::create_dir_all(&completions_dir).is_err() {
         return;
     }
 
-    // Generate completions
     let Ok(file) = std::fs::File::create(&completion_file) else {
         return;
     };
 
     let mut cmd = C::command();
     cmd = add_plugin_commands_from_manifests(cmd);
-
-    // Use dynamic-aware completion writing
     let _ = write_completions_to_file(shell, bin_name, &cmd, file);
 
-    // First time setup: update shell config
     if needs_shell_config {
         let _ = setup_shell_config(shell, &completion_file);
-        // Create marker file
         let _ = std::fs::write(&marker_file, "");
     }
 }
 
-/// Check if completions file is older than the plugins directory.
 fn completions_outdated(completion_file: &std::path::Path) -> bool {
     let plugins_dir = lib_plugin_host::PluginConfig::default_plugins_dir();
 
-    // If plugins dir doesn't exist, no need to regenerate
     if !plugins_dir.exists() {
         return false;
     }
 
-    // If completion file doesn't exist, need to generate
     let Ok(completion_meta) = std::fs::metadata(completion_file) else {
         return true;
     };
@@ -801,10 +722,8 @@ fn completions_outdated(completion_file: &std::path::Path) -> bool {
         return true;
     };
 
-    // Check if any plugin dir is newer than completion file
     if let Ok(entries) = std::fs::read_dir(&plugins_dir) {
         for entry in entries.flatten() {
-            // Skip the command index directory
             if entry.file_name() == lib_plugin_host::command_index::COMMANDS_DIR_NAME {
                 continue;
             }
@@ -821,7 +740,6 @@ fn completions_outdated(completion_file: &std::path::Path) -> bool {
     false
 }
 
-/// Set up shell configuration to source completions.
 fn setup_shell_config(
     shell: CompletionShell,
     completion_file: &std::path::Path,

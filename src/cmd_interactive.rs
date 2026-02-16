@@ -4,7 +4,6 @@ use lib_i18n_core::t;
 
 use crate::args::{Commands, PluginCommands};
 
-/// Represents a selectable command entry in the interactive menu.
 #[derive(Clone)]
 enum CommandEntry {
     Builtin(BuiltinCommand),
@@ -20,8 +19,7 @@ enum BuiltinCommand {
     Logs,
 }
 
-/// Show interactive command selection and prompt for arguments.
-/// Returns `None` if user cancels at any point.
+/// Returns `None` if user cancels.
 pub(crate) async fn select_command() -> Option<Commands> {
     tracing::trace!("Entering interactive command selection");
     let mut options: Vec<SelectOption<CommandEntry>> = vec![
@@ -51,7 +49,6 @@ pub(crate) async fn select_command() -> Option<Commands> {
         )
         .with_description(t!("interactive-cmd-self-update-desc")),
     ];
-    // Discover plugin commands (fast, manifest-only)
     if let Ok(runtime) = PluginRuntime::new(RuntimeConfig::default()).await {
         let plugin_commands = runtime.discover_cli_commands();
         tracing::trace!(count = plugin_commands.len(), "Discovered plugin commands for interactive menu");
@@ -85,7 +82,6 @@ pub(crate) async fn select_command() -> Option<Commands> {
     }
 }
 
-/// Prompt for arguments of a built-in command.
 fn prompt_builtin_args(cmd: BuiltinCommand) -> Option<Commands> {
     match cmd {
         BuiltinCommand::SelfUpdate => prompt_self_update(),

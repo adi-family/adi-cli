@@ -82,7 +82,6 @@ pub async fn self_update(force: bool) -> Result<()> {
     tracing::trace!(src = %binary_path.display(), dest = %current_exe.display(), "Replacing binary");
     replace_binary(&binary_path, &current_exe)?;
 
-    // Cleanup
     let _ = fs::remove_dir_all(&temp_dir);
     tracing::trace!("Temp directory cleaned up");
 
@@ -131,16 +130,11 @@ async fn fetch_latest_release() -> Result<Release> {
 
     tracing::trace!(count = releases.len(), "Fetched releases");
 
-    // Filter for CLI manager releases only
     // Priority: cli-v* (new format), fallback to v* without component prefix (legacy)
-    // Reject: indexer-v* or any other component-prefixed releases
-
-    // First, try to find a release with cli-v* prefix (new format)
     let cli_release = releases
         .iter()
         .find(|release| release.tag_name.starts_with("cli-v"))
         .or_else(|| {
-            // Fallback: find legacy v* releases (without component prefix)
             releases.iter().find(|release| {
                 let tag = &release.tag_name;
                 tag.starts_with('v') && !tag.contains("indexer-") && !tag.contains("cli-")
@@ -201,7 +195,6 @@ fn extract_binary(archive_path: &Path, temp_dir: &Path) -> Result<PathBuf> {
     tracing::trace!(archive = %archive_path.display(), binary_name = %binary_name, "Extracting binary from archive");
 
     if archive_path.extension().and_then(|s| s.to_str()) == Some("zip") {
-        // Windows zip extraction
         tracing::trace!("Using zip extraction");
         use std::io::Read;
         use zip::ZipArchive;
@@ -220,7 +213,6 @@ fn extract_binary(archive_path: &Path, temp_dir: &Path) -> Result<PathBuf> {
             }
         }
     } else {
-        // Unix tar.gz extraction
         tracing::trace!("Using tar.gz extraction");
         use flate2::read::GzDecoder;
         use std::io::Read;
@@ -261,21 +253,17 @@ fn replace_binary(new_binary: &PathBuf, current_exe: &PathBuf) -> Result<()> {
 
     #[cfg(unix)]
     {
-        // On Unix, we can replace the running binary
         fs::copy(new_binary, current_exe)?;
         tracing::trace!("Binary copied");
 
-        // On macOS, re-sign the binary with ad-hoc signature
-        // This is required because the binary loses its signature when extracted
+        // Re-sign: extracted binary loses its signature
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
             tracing::trace!("Re-signing binary with ad-hoc signature (macOS)");
-            // Remove any existing signature first
             let _ = Command::new("codesign")
                 .args(["--remove-signature", current_exe.to_str().unwrap_or("")])
                 .output();
-            // Sign with ad-hoc signature
             let _ = Command::new("codesign")
                 .args(["-s", "-", current_exe.to_str().unwrap_or("")])
                 .output();
@@ -287,8 +275,6 @@ fn replace_binary(new_binary: &PathBuf, current_exe: &PathBuf) -> Result<()> {
 
     #[cfg(windows)]
     {
-        // On Windows, we need to use a different approach
-        // Move current exe to .old, copy new binary, schedule deletion
         let old_exe = current_exe.with_extension("exe.old");
         tracing::trace!(old = %old_exe.display(), "Windows binary replacement");
 
@@ -298,9 +284,6 @@ fn replace_binary(new_binary: &PathBuf, current_exe: &PathBuf) -> Result<()> {
 
         fs::rename(current_exe, &old_exe)?;
         fs::copy(new_binary, current_exe)?;
-
-        // Schedule deletion of old binary on next boot
-        // This is Windows-specific and simplified
         let _ = fs::remove_file(&old_exe);
 
         Ok(())

@@ -5,7 +5,6 @@ use lib_console_output::{theme, out_info, out_success};
 pub(crate) async fn cmd_start(port: u16) -> anyhow::Result<()> {
     tracing::trace!(port = port, "cmd_start invoked");
 
-    // Ensure cocoon plugin is installed
     let manager = PluginManager::new();
 
     if manager.is_installed("adi.cocoon").is_none() {
@@ -15,7 +14,6 @@ pub(crate) async fn cmd_start(port: u16) -> anyhow::Result<()> {
         out_success!("Cocoon plugin installed!");
     }
 
-    // Delegate to cocoon's setup command
     tracing::trace!("Loading cocoon plugin for setup");
     let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
     runtime.scan_and_load_plugin("adi.cocoon").await?;

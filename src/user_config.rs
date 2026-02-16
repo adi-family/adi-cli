@@ -12,12 +12,11 @@ pub struct UserConfig {
 }
 
 impl UserConfig {
-    /// Get path to user config file ($ADI_CONFIG_DIR/config.toml or ~/.config/adi/config.toml)
+    /// $ADI_CONFIG_DIR/config.toml or ~/.config/adi/config.toml
     pub fn config_path() -> Result<PathBuf> {
         Ok(crate::clienv::config_dir().join("config.toml"))
     }
 
-    /// Load user config from disk, returns default if file doesn't exist
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;
         tracing::trace!(path = %path.display(), "Loading user config");
@@ -37,12 +36,10 @@ impl UserConfig {
         Ok(config)
     }
 
-    /// Save user config to disk
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path()?;
         tracing::trace!(path = %path.display(), "Saving user config");
 
-        // Create parent directory if it doesn't exist
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).with_context(|| {
                 format!("Failed to create config directory: {}", parent.display())
@@ -58,7 +55,6 @@ impl UserConfig {
         Ok(())
     }
 
-    /// Check if this is the first run (config file doesn't exist)
     pub fn is_first_run() -> Result<bool> {
         let path = Self::config_path()?;
         let first_run = !path.exists();
@@ -66,7 +62,6 @@ impl UserConfig {
         Ok(first_run)
     }
 
-    /// Check if we're in an interactive session (TTY)
     pub fn is_interactive() -> bool {
         std::io::IsTerminal::is_terminal(&std::io::stdin())
     }
