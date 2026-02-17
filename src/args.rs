@@ -67,6 +67,9 @@ pub(crate) enum Commands {
         service: Option<String>,
     },
 
+    /// Select and persist the active ADI theme
+    Theme,
+
     /// Show CLI info: version, paths, installed plugins, and available commands
     #[command(visible_alias = "i", visible_alias = "h")]
     Info,

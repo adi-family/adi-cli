@@ -35,69 +35,23 @@ pub fn generate_completions<C: CommandFactory>(shell: CompletionShell, bin_name:
     let mut cmd = C::command();
     cmd = add_plugin_commands_from_manifests(cmd);
 
-    match shell {
-        CompletionShell::Zsh => {
-            generate_zsh_with_dynamic(bin_name, &cmd);
-        }
-        CompletionShell::Bash => {
-            generate_bash_with_dynamic(bin_name, &cmd);
-        }
-        CompletionShell::Fish => {
-            generate_fish_with_dynamic(bin_name, &cmd);
-        }
-        _ => {
+    let dynamic_plugins = get_dynamic_completion_plugins();
+    let has_dynamic = !dynamic_plugins.is_empty();
+
+    let script = match (shell, has_dynamic) {
+        (CompletionShell::Zsh, true) => Some(generate_zsh_script_with_dynamic(bin_name, &cmd)),
+        (CompletionShell::Bash, true) => Some(generate_bash_script_with_dynamic(bin_name, &cmd)),
+        (CompletionShell::Fish, true) => Some(generate_fish_script_with_dynamic(bin_name, &cmd)),
+        _ => None,
+    };
+
+    match script {
+        Some(s) => print!("{}", s),
+        None => {
             let shell_type: Shell = shell.into();
             generate(shell_type, &mut cmd, bin_name, &mut std::io::stdout());
         }
     }
-}
-
-fn generate_zsh_with_dynamic(bin_name: &str, cmd: &Command) {
-    let dynamic_plugins = get_dynamic_completion_plugins();
-
-    if dynamic_plugins.is_empty() {
-        generate(
-            Shell::Zsh,
-            &mut cmd.clone(),
-            bin_name,
-            &mut std::io::stdout(),
-        );
-        return;
-    }
-
-    print!("{}", generate_zsh_script_with_dynamic(bin_name, cmd));
-}
-
-fn generate_bash_with_dynamic(bin_name: &str, cmd: &Command) {
-    let dynamic_plugins = get_dynamic_completion_plugins();
-
-    if dynamic_plugins.is_empty() {
-        generate(
-            Shell::Bash,
-            &mut cmd.clone(),
-            bin_name,
-            &mut std::io::stdout(),
-        );
-        return;
-    }
-
-    print!("{}", generate_bash_script_with_dynamic(bin_name, cmd));
-}
-
-fn generate_fish_with_dynamic(bin_name: &str, cmd: &Command) {
-    let dynamic_plugins = get_dynamic_completion_plugins();
-
-    if dynamic_plugins.is_empty() {
-        generate(
-            Shell::Fish,
-            &mut cmd.clone(),
-            bin_name,
-            &mut std::io::stdout(),
-        );
-        return;
-    }
-
-    print!("{}", generate_fish_script_with_dynamic(bin_name, cmd));
 }
 
 static DYNAMIC_COMPLETION_PLUGINS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
@@ -120,40 +74,34 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
     tracing::trace!(dir = %plugins_dir.display(), "Discovering plugin commands for completions");
     let mut dynamic_plugins = Vec::new();
 
-    let manifest_paths = collect_cli_manifest_paths(&plugins_dir);
+    for manifest_path in collect_cli_manifest_paths(&plugins_dir) {
+        let Ok(manifest) = PluginManifest::from_file(&manifest_path) else { continue };
+        let Some(cli) = &manifest.cli else { continue };
 
-    for manifest_path in manifest_paths {
-        if let Ok(manifest) = PluginManifest::from_file(&manifest_path) {
-            if let Some(cli) = &manifest.cli {
-                // Leak to get 'static lifetime required by clap
-                let name: &'static str = Box::leak(cli.command.clone().into_boxed_str());
-                let desc: &'static str = Box::leak(cli.description.clone().into_boxed_str());
-
-                let mut subcmd = Command::new(name)
-                    .about(desc)
-                    .allow_external_subcommands(true);
-
-                for alias in &cli.aliases {
-                    let alias_static: &'static str =
-                        Box::leak(alias.clone().into_boxed_str());
-                    subcmd = subcmd.visible_alias(alias_static);
-                }
-
-                if cli.dynamic_completions {
-                    dynamic_plugins.push(cli.command.clone());
-                }
-
-                tracing::trace!(command = %name, "Added plugin command to completions");
-                cmd = cmd.subcommand(subcmd);
-            }
+        let (subcmd, is_dynamic) = build_cli_subcommand(cli);
+        if is_dynamic {
+            dynamic_plugins.push(cli.command.clone());
         }
+        tracing::trace!(command = %cli.command, "Added plugin command to completions");
+        cmd = cmd.subcommand(subcmd);
     }
 
     tracing::trace!(dynamic_count = dynamic_plugins.len(), "Plugin manifest scan complete");
-
     let _ = DYNAMIC_COMPLETION_PLUGINS.set(dynamic_plugins);
-
     cmd
+}
+
+fn build_cli_subcommand(cli: &lib_plugin_manifest::CliConfig) -> (Command, bool) {
+    let name: &'static str = Box::leak(cli.command.clone().into_boxed_str());
+    let desc: &'static str = Box::leak(cli.description.clone().into_boxed_str());
+    let mut subcmd = Command::new(name).about(desc).allow_external_subcommands(true);
+
+    for alias in &cli.aliases {
+        let alias_static: &'static str = Box::leak(alias.clone().into_boxed_str());
+        subcmd = subcmd.visible_alias(alias_static);
+    }
+
+    (subcmd, cli.dynamic_completions)
 }
 
 fn collect_cli_manifest_paths(plugins_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
@@ -199,35 +147,7 @@ fn collect_cli_manifest_paths(plugins_dir: &std::path::Path) -> Vec<std::path::P
 }
 
 fn find_plugin_manifest(plugin_dir: &std::path::Path) -> Option<std::path::PathBuf> {
-    let version_file = plugin_dir.join(".version");
-    if version_file.exists() {
-        if let Ok(version) = std::fs::read_to_string(&version_file) {
-            let version = version.trim();
-            let versioned_manifest = plugin_dir.join(version).join("plugin.toml");
-            if versioned_manifest.exists() {
-                return Some(versioned_manifest);
-            }
-        }
-    }
-
-    let direct_manifest = plugin_dir.join("plugin.toml");
-    if direct_manifest.exists() {
-        return Some(direct_manifest);
-    }
-
-    if let Ok(entries) = std::fs::read_dir(plugin_dir) {
-        for entry in entries.flatten() {
-            let subdir = entry.path();
-            if subdir.is_dir() {
-                let manifest = subdir.join("plugin.toml");
-                if manifest.exists() {
-                    return Some(manifest);
-                }
-            }
-        }
-    }
-
-    None
+    crate::plugin_runtime::find_plugin_toml_path(plugin_dir)
 }
 
 pub fn get_shell_config_path(shell: CompletionShell) -> Option<PathBuf> {
@@ -339,10 +259,17 @@ fn write_completions_to_file(
 
 fn generate_zsh_script_with_dynamic(bin_name: &str, cmd: &Command) -> String {
     let dynamic_plugins = get_dynamic_completion_plugins();
-
     let plugin_commands = build_zsh_plugin_command_entries(cmd);
     let dynamic_cases = build_zsh_dynamic_cases(dynamic_plugins);
 
+    format!(
+        "{}\n{}\n",
+        zsh_dynamic_complete_fn(bin_name),
+        zsh_main_fn(&plugin_commands, &dynamic_cases),
+    )
+}
+
+fn zsh_dynamic_complete_fn(bin_name: &str) -> String {
     format!(
         r#"#compdef {bin_name}
 
@@ -353,7 +280,6 @@ _adi_dynamic_complete() {{
     shift 2
     local words=("$@")
 
-    # Call the plugin's --completions command
     local completions
     completions=$({bin_name} "$cmd" --completions "$pos" "${{words[@]}}" 2>/dev/null)
 
@@ -370,9 +296,13 @@ _adi_dynamic_complete() {{
         return 0
     fi
     return 1
-}}
+}}"#
+    )
+}
 
-_adi() {{
+fn zsh_main_fn(plugin_commands: &str, dynamic_cases: &str) -> String {
+    format!(
+        r#"_adi() {{
     local context state state_descr line
     typeset -A opt_args
 
@@ -403,8 +333,7 @@ _adi() {{
     esac
 }}
 
-_adi "$@"
-"#
+_adi "$@""#
     )
 }
 
@@ -445,6 +374,14 @@ fn generate_bash_script_with_dynamic(bin_name: &str, cmd: &Command) -> String {
     let dynamic_str = dynamic_plugins.join("|");
 
     format!(
+        "{}\n{}\ncomplete -F _{bin_name} {bin_name}\n",
+        bash_dynamic_complete_fn(bin_name),
+        bash_main_fn(bin_name, &subcommands_str, &dynamic_str),
+    )
+}
+
+fn bash_dynamic_complete_fn(bin_name: &str) -> String {
+    format!(
         r#"# Bash completion for {bin_name}
 
 _{bin_name}_dynamic_complete() {{
@@ -452,13 +389,11 @@ _{bin_name}_dynamic_complete() {{
     local pos=$2
     shift 2
     local words=("$@")
-    
-    # Call the plugin's --completions command
+
     local completions
     completions=$({bin_name} "$cmd" --completions "$pos" "${{words[@]}}" 2>/dev/null)
-    
+
     if [[ -n "$completions" ]]; then
-        # Parse tab-separated completions (completion\tdescription)
         local -a comps
         while IFS=$'\t' read -r comp desc; do
             comps+=("$comp")
@@ -467,9 +402,13 @@ _{bin_name}_dynamic_complete() {{
         return 0
     fi
     return 1
-}}
+}}"#
+    )
+}
 
-_{bin_name}() {{
+fn bash_main_fn(bin_name: &str, subcommands_str: &str, dynamic_str: &str) -> String {
+    format!(
+        r#"_{bin_name}() {{
     local cur prev words cword
     _init_completion || return
 
@@ -481,44 +420,42 @@ _{bin_name}() {{
     fi
 
     local cmd="${{words[1]}}"
-    
+
     case "$cmd" in
         {dynamic_str})
-            # Dynamic completion for these commands
             local pos=$((cword - 1))
             local cmd_words=("${{words[@]:2}}")
             _{bin_name}_dynamic_complete "$cmd" "$pos" "${{cmd_words[@]}}"
             ;;
         *)
-            # Default file completion
             _filedir
             ;;
     esac
-}}
-
-complete -F _{bin_name} {bin_name}
-"#
+}}"#
     )
 }
 
 fn generate_fish_script_with_dynamic(bin_name: &str, cmd: &Command) -> String {
     let dynamic_plugins = get_dynamic_completion_plugins();
-    let mut script = String::new();
+    let mut script = fish_header_and_dynamic_fn(bin_name);
+    append_fish_subcommand_completions(&mut script, bin_name, cmd);
+    script.push('\n');
+    append_fish_dynamic_completions(&mut script, bin_name, dynamic_plugins);
+    script
+}
 
-    script.push_str(&format!(
+fn fish_header_and_dynamic_fn(bin_name: &str) -> String {
+    format!(
         r#"# Fish completion for {bin_name}
 
-# Dynamic completion function
 function __adi_dynamic_complete
     set -l cmd $argv[1]
     set -l pos $argv[2]
     set -l words $argv[3..-1]
-    
-    # Call the plugin's --completions command  
+
     set -l completions ({bin_name} $cmd --completions $pos $words 2>/dev/null)
-    
+
     for line in $completions
-        # Parse tab-separated: completion\tdescription
         set -l parts (string split \t $line)
         if test (count $parts) -ge 2
             echo $parts[1]\t$parts[2]
@@ -528,22 +465,19 @@ function __adi_dynamic_complete
     end
 end
 
-# Disable file completions for adi
 complete -c {bin_name} -f
 "#
-    ));
+    )
+}
 
+fn append_fish_subcommand_completions(script: &mut String, bin_name: &str, cmd: &Command) {
     for subcmd in cmd.get_subcommands() {
         let name = subcmd.get_name();
-        let about = subcmd
-            .get_about()
-            .map(|s| s.to_string())
-            .unwrap_or_default();
+        let about = subcmd.get_about().map(|s| s.to_string()).unwrap_or_default();
         script.push_str(&format!(
             r#"complete -c {bin_name} -n "__fish_use_subcommand" -a "{name}" -d "{about}"
 "#
         ));
-
         for alias in subcmd.get_visible_aliases() {
             script.push_str(&format!(
                 r#"complete -c {bin_name} -n "__fish_use_subcommand" -a "{alias}" -d "{about}"
@@ -551,18 +485,15 @@ complete -c {bin_name} -f
             ));
         }
     }
+}
 
-    script.push('\n');
-
+fn append_fish_dynamic_completions(script: &mut String, bin_name: &str, dynamic_plugins: &[String]) {
     for plugin_cmd in dynamic_plugins {
         script.push_str(&format!(
-            r#"# Dynamic completions for {plugin_cmd}
-complete -c {bin_name} -n "__fish_seen_subcommand_from {plugin_cmd}" -a "(__adi_dynamic_complete {plugin_cmd} (count (commandline -opc)) (commandline -opc)[3..-1])"
+            r#"complete -c {bin_name} -n "__fish_seen_subcommand_from {plugin_cmd}" -a "(__adi_dynamic_complete {plugin_cmd} (count (commandline -opc)) (commandline -opc)[3..-1])"
 "#
         ));
     }
-
-    script
 }
 
 fn add_to_shell_config(shell: CompletionShell, snippet: &str) -> anyhow::Result<()> {

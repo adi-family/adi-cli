@@ -36,7 +36,14 @@ pub async fn self_update(force: bool) -> Result<()> {
     }
 
     out_info!("{}", t!("self-update-new-version", "current" => CURRENT_VERSION, "latest" => &latest_version));
+    download_and_install().await?;
 
+    out_success!("{}", t!("self-update-success", "version" => &latest_version));
+    tracing::trace!(version = %latest_version, "Self-update complete");
+    Ok(())
+}
+
+async fn download_and_install() -> Result<()> {
     let current_exe = env::current_exe()?;
     let platform = detect_platform()?;
     tracing::trace!(platform = %platform, exe = %current_exe.display(), "Detected platform");
@@ -64,10 +71,6 @@ pub async fn self_update(force: bool) -> Result<()> {
 
     let _ = fs::remove_dir_all(&temp_dir);
     tracing::trace!("Temp directory cleaned up");
-
-    out_success!("{}", t!("self-update-success", "version" => &latest_version));
-
-    tracing::trace!(version = %latest_version, "Self-update complete");
     Ok(())
 }
 
@@ -207,7 +210,7 @@ fn extract_from_zip(archive_path: &Path, binary_name: &str, dest: &Path) -> Resu
         tracing::trace!("Binary extracted from zip");
         return Ok(());
     }
-    Ok(())
+    Err(anyhow!("Binary '{}' not found in zip archive", binary_name))
 }
 
 fn extract_from_tar_gz(archive_path: &Path, binary_name: &str, dest: &Path) -> Result<()> {
@@ -230,7 +233,7 @@ fn extract_from_tar_gz(archive_path: &Path, binary_name: &str, dest: &Path) -> R
         tracing::trace!("Binary extracted from tar.gz");
         return Ok(());
     }
-    Ok(())
+    Err(anyhow!("Binary '{}' not found in tar.gz archive", binary_name))
 }
 
 fn replace_binary(new_binary: &Path, current_exe: &Path) -> Result<()> {

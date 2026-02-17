@@ -7,6 +7,7 @@ mod cmd_plugin;
 mod cmd_run;
 mod cmd_search;
 mod cmd_start;
+mod cmd_theme;
 mod init;
 
 use args::{Cli, Commands};
@@ -45,6 +46,13 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    dispatch_command(command).await?;
+
+    tracing::trace!("ADI CLI finished");
+    Ok(())
+}
+
+async fn dispatch_command(command: Commands) -> anyhow::Result<()> {
     match command {
         Commands::SelfUpdate { force } => {
             tracing::trace!(force = force, "Dispatching: self-update");
@@ -72,6 +80,10 @@ async fn main() -> anyhow::Result<()> {
             tracing::trace!(plugin_id = %plugin_id, "Dispatching: logs");
             cmd_logs::cmd_logs(&plugin_id, follow, lines, level, service).await?
         }
+        Commands::Theme => {
+            tracing::trace!("Dispatching: theme");
+            cmd_theme::cmd_theme()?
+        }
         Commands::Info => {
             tracing::trace!("Dispatching: info");
             cmd_info::cmd_info().await?
@@ -81,7 +93,5 @@ async fn main() -> anyhow::Result<()> {
             cmd_external::cmd_external(args).await?
         }
     }
-
-    tracing::trace!("ADI CLI finished");
     Ok(())
 }

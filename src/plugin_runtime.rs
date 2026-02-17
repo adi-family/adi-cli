@@ -186,11 +186,6 @@ impl PluginRuntime {
         Ok(plugin_dir)
     }
 
-    pub async fn load_plugin(&self, plugin_id: &str) -> Result<()> {
-        tracing::trace!(plugin_id = %plugin_id, "Loading single plugin");
-        self.load_plugin_internal(plugin_id).await
-    }
-
     pub async fn scan_and_load_plugin(&self, plugin_id: &str) -> Result<()> {
         tracing::trace!(plugin_id = %plugin_id, "Scan-and-load single plugin");
         self.load_plugin_internal(plugin_id).await
@@ -207,16 +202,12 @@ impl PluginRuntime {
     }
 
     pub fn list_runnable_plugins(&self) -> Vec<(String, String)> {
-        self.manager_v3
-            .read()
-            .unwrap()
+        let manager = self.manager_v3.read().unwrap();
+        manager
             .all_cli_commands()
             .into_iter()
             .map(|(id, _)| {
-                let description = self
-                    .manager_v3
-                    .read()
-                    .unwrap()
+                let description = manager
                     .get_plugin(&id)
                     .and_then(|p| p.metadata().description)
                     .unwrap_or_default();
@@ -273,35 +264,17 @@ impl PluginRuntime {
 
     fn parse_cli_context(&self, context_json: &str) -> Result<lib_plugin_abi_v3::cli::CliContext> {
         use lib_plugin_abi_v3::cli::CliContext;
-        use std::path::PathBuf;
 
         let value: serde_json::Value = serde_json::from_str(context_json)
             .map_err(|e| crate::error::InstallerError::Other(e.to_string()))?;
 
-        let command = value
-            .get("command")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-
-        let args: Vec<String> = value
-            .get("args")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let cwd = value
-            .get("cwd")
-            .and_then(|v| v.as_str())
-            .map(PathBuf::from)
+        let command = Self::json_str(&value, "command").unwrap_or_default();
+        let args = Self::parse_json_args(&value);
+        let cwd = Self::json_str(&value, "cwd")
+            .map(std::path::PathBuf::from)
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
         let subcommand = args.first().cloned();
-
         let mut options = Self::parse_json_options(&value);
         let remaining_args: Vec<String> = args.into_iter().skip(1).collect();
         let positional_args = Self::split_args_and_flags(&remaining_args, &mut options);
@@ -314,6 +287,22 @@ impl PluginRuntime {
             cwd,
             env: std::env::vars().collect(),
         })
+    }
+
+    fn json_str(value: &serde_json::Value, key: &str) -> Option<String> {
+        value.get(key).and_then(|v| v.as_str()).map(String::from)
+    }
+
+    fn parse_json_args(value: &serde_json::Value) -> Vec<String> {
+        value
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn parse_json_options(value: &serde_json::Value) -> std::collections::HashMap<String, serde_json::Value> {
@@ -439,41 +428,8 @@ impl PluginRuntime {
         commands
     }
 
-    /// Handles versioned directories (e.g., plugins/adi.tasks/0.8.8/plugin.toml)
     fn find_plugin_toml_path(plugin_dir: &std::path::Path) -> Option<PathBuf> {
-        let version_file = plugin_dir.join(".version");
-        if version_file.exists() {
-            if let Ok(version) = std::fs::read_to_string(&version_file) {
-                let version = version.trim();
-                let versioned_manifest = plugin_dir.join(version).join("plugin.toml");
-                if versioned_manifest.exists() {
-                    tracing::trace!(path = %versioned_manifest.display(), "Found versioned plugin.toml");
-                    return Some(versioned_manifest);
-                }
-            }
-        }
-
-        let direct_manifest = plugin_dir.join("plugin.toml");
-        if direct_manifest.exists() {
-            tracing::trace!(path = %direct_manifest.display(), "Found direct plugin.toml");
-            return Some(direct_manifest);
-        }
-
-        if let Ok(entries) = std::fs::read_dir(plugin_dir) {
-            for entry in entries.flatten() {
-                let subdir = entry.path();
-                if subdir.is_dir() {
-                    let manifest = subdir.join("plugin.toml");
-                    if manifest.exists() {
-                        tracing::trace!(path = %manifest.display(), "Found plugin.toml in subdirectory");
-                        return Some(manifest);
-                    }
-                }
-            }
-        }
-
-        tracing::trace!(dir = %plugin_dir.display(), "No plugin.toml found");
-        None
+        find_plugin_toml_path(plugin_dir)
     }
 
     /// Uses command index for O(1) lookup, falls back to full discovery.
@@ -511,6 +467,43 @@ impl Clone for PluginRuntime {
             config: self.config.clone(),
         }
     }
+}
+
+/// Handles versioned directories (e.g., plugins/adi.tasks/0.8.8/plugin.toml)
+pub(crate) fn find_plugin_toml_path(plugin_dir: &std::path::Path) -> Option<PathBuf> {
+    let version_file = plugin_dir.join(".version");
+    if version_file.exists() {
+        if let Ok(version) = std::fs::read_to_string(&version_file) {
+            let version = version.trim();
+            let versioned_manifest = plugin_dir.join(version).join("plugin.toml");
+            if versioned_manifest.exists() {
+                tracing::trace!(path = %versioned_manifest.display(), "Found versioned plugin.toml");
+                return Some(versioned_manifest);
+            }
+        }
+    }
+
+    let direct_manifest = plugin_dir.join("plugin.toml");
+    if direct_manifest.exists() {
+        tracing::trace!(path = %direct_manifest.display(), "Found direct plugin.toml");
+        return Some(direct_manifest);
+    }
+
+    if let Ok(entries) = std::fs::read_dir(plugin_dir) {
+        for entry in entries.flatten() {
+            let subdir = entry.path();
+            if subdir.is_dir() {
+                let manifest = subdir.join("plugin.toml");
+                if manifest.exists() {
+                    tracing::trace!(path = %manifest.display(), "Found plugin.toml in subdirectory");
+                    return Some(manifest);
+                }
+            }
+        }
+    }
+
+    tracing::trace!(dir = %plugin_dir.display(), "No plugin.toml found");
+    None
 }
 
 #[cfg(test)]

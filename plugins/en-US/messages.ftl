@@ -158,6 +158,7 @@ interactive-cmd-run = run
 interactive-cmd-logs = logs
 interactive-cmd-debug = debug
 interactive-cmd-self-update = self-update
+interactive-cmd-theme = theme
 interactive-cmd-completions = completions
 interactive-cmd-init = init
 
@@ -170,6 +171,7 @@ interactive-cmd-run-desc = Run a plugin's CLI interface
 interactive-cmd-logs-desc = Stream live logs from a plugin
 interactive-cmd-debug-desc = Debug and diagnostic commands
 interactive-cmd-self-update-desc = Update adi CLI to the latest version
+interactive-cmd-theme-desc = Preview and select a color theme
 interactive-cmd-completions-desc = Generate shell completions
 interactive-cmd-init-desc = Initialize shell completions
 

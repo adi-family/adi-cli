@@ -50,10 +50,10 @@ async fn print_installed_plugins(plugins_dir: &std::path::Path) {
         .print();
 
     if plugin_dirs.is_empty() {
-        println!("  {}", theme::muted(t!("info-no-plugins")));
+        lib_console_output::fg_println!("  {}", theme::muted(t!("info-no-plugins")));
     } else {
         for id in &plugin_dirs {
-            println!("  {} {}", theme::brand(theme::icons::BRAND), id);
+            lib_console_output::fg_println!("  {} {}", theme::brand(theme::icons::BRAND), theme::foreground(id));
         }
     }
 
@@ -73,7 +73,7 @@ async fn print_available_commands() {
     ];
 
     for (name, desc) in &builtins {
-        println!(
+        lib_console_output::fg_println!(
             "  {} {:<16} {}",
             theme::brand(theme::icons::BRAND),
             theme::bold(name),
@@ -85,14 +85,14 @@ async fn print_available_commands() {
         let plugin_commands = runtime.discover_cli_commands();
         if !plugin_commands.is_empty() {
             println!();
-            println!("  {}", theme::muted(t!("info-plugin-commands")));
+            lib_console_output::fg_println!("  {}", theme::muted(t!("info-plugin-commands")));
             for cmd in &plugin_commands {
                 let aliases = if cmd.aliases.is_empty() {
                     String::new()
                 } else {
                     format!(" ({})", cmd.aliases.join(", "))
                 };
-                println!(
+                lib_console_output::fg_println!(
                     "  {} {:<16} {}{}",
                     theme::brand(theme::icons::BRAND),
                     theme::bold(&cmd.command),

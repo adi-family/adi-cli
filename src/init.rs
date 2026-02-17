@@ -1,7 +1,7 @@
 use cli::plugin_registry::PluginManager;
 use cli::user_config::UserConfig;
-use dialoguer::{theme::ColorfulTheme, Select};
 use lib_console_output::{theme, out_info, out_success, out_warn};
+use lib_console_output::input::Select;
 use lib_i18n_core::{init_global, I18n};
 
 /// Priority: ADI_THEME env var > config file theme > default ("indigo").
@@ -205,20 +205,19 @@ async fn prompt_language_selection() -> anyhow::Result<String> {
     }
 
     out_info!("{}", theme::brand_bold("Welcome to ADI! 🎉"));
-    out_info!("Please select your preferred language:");
 
-    let items: Vec<String> = languages
+    let items: Vec<(String, String)> = languages
         .iter()
-        .map(|(code, name)| format!("{} ({})", name, code))
+        .map(|(code, name)| (format!("{} ({})", name, code), code.clone()))
         .collect();
 
-    let selection = Select::with_theme(&ColorfulTheme::default())
-        .items(&items)
-        .default(0)
-        .interact()?;
+    let selected = Select::new("Please select your preferred language:")
+        .items(items)
+        .run()
+        .ok_or_else(|| anyhow::anyhow!("Language selection cancelled"))?;
 
-    tracing::trace!(selected = %languages[selection].0, "User selected language");
-    Ok(languages[selection].0.clone())
+    tracing::trace!(selected = %selected, "User selected language");
+    Ok(selected)
 }
 
 /// Rate-limited to once per day.

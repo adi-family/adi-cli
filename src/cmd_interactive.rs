@@ -16,8 +16,8 @@ fn print_welcome() {
     );
     let separator = theme::muted("───────────────────");
     let ver = theme::muted(format!("v{version}"));
-    println!("{title} {separator} {ver}");
-    println!(
+    lib_console_output::fg_println!("{title} {separator} {ver}");
+    lib_console_output::fg_println!(
         "  when you {} {}, {} {}",
         theme::brand("think"),
         theme::brand_bold("agents"),
@@ -41,59 +41,15 @@ enum BuiltinCommand {
     Plugin,
     Run,
     Logs,
+    Theme,
 }
 
 /// Returns `None` if user cancels.
 pub(crate) async fn select_command() -> Option<Commands> {
     tracing::trace!("Entering interactive command selection");
     print_welcome();
-    let mut options: Vec<SelectOption<CommandEntry>> = vec![
-        SelectOption::new(
-            t!("interactive-cmd-info"),
-            CommandEntry::Builtin(BuiltinCommand::Info),
-        )
-        .with_description(t!("interactive-cmd-info-desc")),
-        SelectOption::new(
-            t!("interactive-cmd-start"),
-            CommandEntry::Builtin(BuiltinCommand::Start),
-        )
-        .with_description(t!("interactive-cmd-start-desc")),
-        SelectOption::new(
-            t!("interactive-cmd-plugin"),
-            CommandEntry::Builtin(BuiltinCommand::Plugin),
-        )
-        .with_description(t!("interactive-cmd-plugin-desc")),
-        SelectOption::new(
-            t!("interactive-cmd-run"),
-            CommandEntry::Builtin(BuiltinCommand::Run),
-        )
-        .with_description(t!("interactive-cmd-run-desc")),
-        SelectOption::new(
-            t!("interactive-cmd-logs"),
-            CommandEntry::Builtin(BuiltinCommand::Logs),
-        )
-        .with_description(t!("interactive-cmd-logs-desc")),
-        SelectOption::new(
-            t!("interactive-cmd-self-update"),
-            CommandEntry::Builtin(BuiltinCommand::SelfUpdate),
-        )
-        .with_description(t!("interactive-cmd-self-update-desc")),
-    ];
-    if let Ok(runtime) = PluginRuntime::new(RuntimeConfig::default()).await {
-        let plugin_commands = runtime.discover_cli_commands();
-        tracing::trace!(count = plugin_commands.len(), "Discovered plugin commands for interactive menu");
-        for cmd in plugin_commands {
-            options.push(
-                SelectOption::new(
-                    cmd.command.clone(),
-                    CommandEntry::Plugin {
-                        command: cmd.command.clone(),
-                    },
-                )
-                .with_description(cmd.description.clone()),
-            );
-        }
-    }
+
+    let options = build_command_options().await;
 
     let entry = Select::new(t!("interactive-select-command"))
         .options(options)
@@ -112,6 +68,45 @@ pub(crate) async fn select_command() -> Option<Commands> {
     }
 }
 
+async fn build_command_options() -> Vec<SelectOption<CommandEntry>> {
+    let mut options = builtin_command_options();
+
+    if let Ok(runtime) = PluginRuntime::new(RuntimeConfig::default()).await {
+        let plugin_commands = runtime.discover_cli_commands();
+        tracing::trace!(count = plugin_commands.len(), "Discovered plugin commands for interactive menu");
+        for cmd in plugin_commands {
+            options.push(
+                SelectOption::new(
+                    cmd.command.clone(),
+                    CommandEntry::Plugin { command: cmd.command.clone() },
+                )
+                .with_description(cmd.description.clone()),
+            );
+        }
+    }
+
+    options
+}
+
+fn builtin_command_options() -> Vec<SelectOption<CommandEntry>> {
+    vec![
+        SelectOption::new(t!("interactive-cmd-info"), CommandEntry::Builtin(BuiltinCommand::Info))
+            .with_description(t!("interactive-cmd-info-desc")),
+        SelectOption::new(t!("interactive-cmd-start"), CommandEntry::Builtin(BuiltinCommand::Start))
+            .with_description(t!("interactive-cmd-start-desc")),
+        SelectOption::new(t!("interactive-cmd-plugin"), CommandEntry::Builtin(BuiltinCommand::Plugin))
+            .with_description(t!("interactive-cmd-plugin-desc")),
+        SelectOption::new(t!("interactive-cmd-run"), CommandEntry::Builtin(BuiltinCommand::Run))
+            .with_description(t!("interactive-cmd-run-desc")),
+        SelectOption::new(t!("interactive-cmd-logs"), CommandEntry::Builtin(BuiltinCommand::Logs))
+            .with_description(t!("interactive-cmd-logs-desc")),
+        SelectOption::new(t!("interactive-cmd-self-update"), CommandEntry::Builtin(BuiltinCommand::SelfUpdate))
+            .with_description(t!("interactive-cmd-self-update-desc")),
+        SelectOption::new(t!("interactive-cmd-theme"), CommandEntry::Builtin(BuiltinCommand::Theme))
+            .with_description(t!("interactive-cmd-theme-desc")),
+    ]
+}
+
 fn prompt_builtin_args(cmd: BuiltinCommand) -> Option<Commands> {
     match cmd {
         BuiltinCommand::Info => Some(Commands::Info),
@@ -123,6 +118,7 @@ fn prompt_builtin_args(cmd: BuiltinCommand) -> Option<Commands> {
             args: vec![],
         }),
         BuiltinCommand::Logs => prompt_logs(),
+        BuiltinCommand::Theme => Some(Commands::Theme),
     }
 }
 
@@ -156,59 +152,37 @@ fn prompt_plugin() -> Option<Commands> {
         ])
         .run()?;
 
-    match subcmd {
-        "list" => Some(Commands::Plugin {
-            command: PluginCommands::List,
-        }),
-        "installed" => Some(Commands::Plugin {
-            command: PluginCommands::Installed,
-        }),
+    dispatch_plugin_subcmd(subcmd)
+}
+
+fn dispatch_plugin_subcmd(subcmd: &str) -> Option<Commands> {
+    let cmd = match subcmd {
+        "list" => PluginCommands::List,
+        "installed" => PluginCommands::Installed,
         "search" => {
             let query = Input::new(t!("interactive-search-query")).required().run()?;
-            Some(Commands::Plugin {
-                command: PluginCommands::Search { query },
-            })
+            PluginCommands::Search { query }
         }
         "install" => {
-            let plugin_id = Input::new(t!("interactive-plugin-install-id"))
-                .required()
-                .run()?;
-            Some(Commands::Plugin {
-                command: PluginCommands::Install {
-                    plugin_id,
-                    version: None,
-                },
-            })
+            let plugin_id = Input::new(t!("interactive-plugin-install-id")).required().run()?;
+            PluginCommands::Install { plugin_id, version: None }
         }
         "update" => {
-            let plugin_id = Input::new(t!("interactive-plugin-update-id"))
-                .required()
-                .run()?;
-            Some(Commands::Plugin {
-                command: PluginCommands::Update { plugin_id },
-            })
+            let plugin_id = Input::new(t!("interactive-plugin-update-id")).required().run()?;
+            PluginCommands::Update { plugin_id }
         }
-        "update-all" => Some(Commands::Plugin {
-            command: PluginCommands::UpdateAll,
-        }),
+        "update-all" => PluginCommands::UpdateAll,
         "uninstall" => {
-            let plugin_id = Input::new(t!("interactive-plugin-uninstall-id"))
-                .required()
-                .run()?;
-            Some(Commands::Plugin {
-                command: PluginCommands::Uninstall { plugin_id },
-            })
+            let plugin_id = Input::new(t!("interactive-plugin-uninstall-id")).required().run()?;
+            PluginCommands::Uninstall { plugin_id }
         }
         "path" => {
-            let plugin_id = Input::new(t!("interactive-plugin-path-id"))
-                .required()
-                .run()?;
-            Some(Commands::Plugin {
-                command: PluginCommands::Path { plugin_id },
-            })
+            let plugin_id = Input::new(t!("interactive-plugin-path-id")).required().run()?;
+            PluginCommands::Path { plugin_id }
         }
-        _ => None,
-    }
+        _ => return None,
+    };
+    Some(Commands::Plugin { command: cmd })
 }
 
 fn prompt_logs() -> Option<Commands> {
