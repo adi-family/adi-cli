@@ -1,11 +1,3 @@
-//! Service manager for child process lifecycle
-//!
-//! Manages plugin services as child processes with:
-//! - Start/stop/restart operations
-//! - Process tracking (PID, uptime)
-//! - Restart counting
-//! - Log capture
-
 use super::protocol::{ServiceConfig, ServiceInfo, ServiceState};
 use crate::clienv;
 use anyhow::Result;

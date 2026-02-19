@@ -9,7 +9,6 @@ use lib_plugin_registry::{PluginEntry, PluginInfo, SearchResults};
 
 use crate::error::Result;
 
-/// Thin UI wrapper over `PluginInstaller` (progress bars, i18n messages, prompts).
 pub struct PluginManager {
     installer: PluginInstaller,
 }

@@ -1,10 +1,3 @@
-//! Daemon server - main loop and IPC handler
-//!
-//! The daemon runs as a background process and handles:
-//! - IPC requests from clients
-//! - Service lifecycle management
-//! - Health monitoring
-
 use super::executor::CommandExecutor;
 use super::health::HealthManager;
 use super::protocol::{ArchivedRequest, MessageFrame, Response};

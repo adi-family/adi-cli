@@ -1,8 +1,3 @@
-//! IPC Protocol types using rkyv for zero-copy serialization
-//!
-//! All request/response types use `#[derive(Archive, Serialize, Deserialize)]`
-//! for zero-copy deserialization. The bytes ARE the struct - no parsing needed.
-
 use rkyv::{Archive, Deserialize, Serialize};
 
 /// IPC request from client to daemon

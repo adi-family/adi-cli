@@ -125,7 +125,6 @@ pub(crate) async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
             let version = version.trim();
             let versioned_path = plugin_dir.join(version);
 
-            // Print just the path (useful for scripting)
             println!("{}", versioned_path.display());
         }
     }
@@ -133,7 +132,6 @@ pub(crate) async fn cmd_plugin(command: PluginCommands) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Regenerate shell completions silently (called after plugin changes).
 fn regenerate_completions_quiet() {
     if let Err(e) = completions::regenerate_completions::<Cli>("adi") {
         #[cfg(debug_assertions)]

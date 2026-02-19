@@ -1,7 +1,3 @@
-//! Daemon client for communicating with the background daemon
-//!
-//! Provides a high-level API for plugins to interact with the daemon.
-
 use super::protocol::{
     ArchivedResponse, MessageFrame, Request, Response, ServiceConfig, ServiceInfo,
 };

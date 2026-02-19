@@ -1,8 +1,3 @@
-//! Daemon CLI commands
-//!
-//! Power user commands for managing the ADI background daemon and services.
-//! The daemon manages plugin services, health monitoring, and privileged operations.
-
 use crate::args::DaemonCommands;
 use anyhow::Result;
 use cli::clienv;

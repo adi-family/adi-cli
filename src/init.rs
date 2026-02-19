@@ -4,7 +4,6 @@ use lib_console_output::{theme, out_info, out_success, out_warn};
 use lib_console_output::input::Select;
 use lib_i18n_core::{init_global, I18n};
 
-/// Priority: ADI_THEME env var > config file theme > default ("indigo").
 pub(crate) fn initialize_theme() {
     let theme_id = cli::clienv::theme()
         .or_else(|| UserConfig::load().ok().and_then(|c| c.theme))
@@ -13,7 +12,6 @@ pub(crate) fn initialize_theme() {
     lib_console_output::theme::init(&theme_id);
 }
 
-/// Priority: --lang flag > ADI_LANG env > saved config > system LANG > interactive prompt > en-US.
 async fn resolve_language(
     lang_override: Option<&str>,
     config: &mut UserConfig,
@@ -129,7 +127,6 @@ fn try_load_ftl(i18n: &mut I18n, lang: &str, plugin_dir: &std::path::Path) -> bo
     }
 }
 
-/// Falls back to scanning installed plugins, then to just en-US (built-in).
 async fn get_available_languages() -> Vec<(String, String)> {
     tracing::trace!("Discovering available languages");
     let mut languages = vec![("en-US".to_string(), "English".to_string())];
@@ -220,7 +217,6 @@ async fn prompt_language_selection() -> anyhow::Result<String> {
     Ok(selected)
 }
 
-/// Rate-limited to once per day.
 fn should_check_translation(plugins_dir: &std::path::Path, translation_id: &str) -> bool {
     let stamp = plugins_dir.join(format!(".{}.last-check", translation_id));
     let should = match std::fs::metadata(&stamp) {

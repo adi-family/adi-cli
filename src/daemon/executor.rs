@@ -1,9 +1,3 @@
-//! Command execution with privilege isolation
-//!
-//! Provides two execution modes:
-//! - `run()`: Execute as regular `adi` user
-//! - `sudo_run()`: Execute as privileged `adi-root` user
-
 use crate::clienv;
 use anyhow::Result;
 use std::process::Output;

@@ -74,7 +74,6 @@ enum AutoinstallResult {
     Failed,
 }
 
-/// Plugin ID is inferred using [`CLI_PLUGIN_PREFIX`](crate::clienv::CLI_PLUGIN_PREFIX) + command.
 async fn try_autoinstall_plugin(
     command: &str,
     cli_commands: &[cli::plugin_runtime::PluginCliCommand],

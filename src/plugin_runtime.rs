@@ -1,6 +1,3 @@
-//! Plugin runtime — loads plugins and dispatches CLI/HTTP requests.
-//! All plugins use the v3 ABI (lib_plugin_abi_v3).
-
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -155,11 +152,9 @@ impl PluginRuntime {
         }
     }
 
-    /// Prefers the `latest` symlink, falls back to `.version` file.
     fn resolve_plugin_dir(&self, plugin_id: &str) -> Result<PathBuf> {
         let plugin_dir = self.config.plugins_dir.join(plugin_id);
 
-        // Fast path: use latest symlink
         let latest_link = plugin_dir.join(lib_plugin_host::command_index::LATEST_LINK_NAME);
         if latest_link.is_symlink() {
             if let Ok(resolved) = std::fs::canonicalize(&latest_link) {
@@ -168,7 +163,6 @@ impl PluginRuntime {
             }
         }
 
-        // Fallback: read .version file
         let version_file = plugin_dir.join(".version");
         if version_file.exists() {
             if let Ok(version) = std::fs::read_to_string(&version_file) {
@@ -181,7 +175,6 @@ impl PluginRuntime {
             }
         }
 
-        // Fallback to plugin_dir itself
         tracing::trace!(plugin_id = %plugin_id, dir = %plugin_dir.display(), "Using plugin directory directly");
         Ok(plugin_dir)
     }
@@ -336,7 +329,6 @@ impl PluginRuntime {
         positional
     }
 
-    /// Uses command index for fast discovery, falls back to full scan.
     pub fn discover_cli_commands(&self) -> Vec<PluginCliCommand> {
         tracing::trace!("Discovering CLI commands");
 
@@ -365,7 +357,6 @@ impl PluginRuntime {
         commands
     }
 
-    /// Deduplicates by manifest path (aliases point to same manifest).
     fn commands_from_index(indexed: Vec<(String, PathBuf)>) -> Vec<PluginCliCommand> {
         let mut seen = std::collections::HashMap::<PathBuf, PluginCliCommand>::new();
 
@@ -432,7 +423,6 @@ impl PluginRuntime {
         find_plugin_toml_path(plugin_dir)
     }
 
-    /// Uses command index for O(1) lookup, falls back to full discovery.
     pub fn find_plugin_by_command(&self, command: &str) -> Option<String> {
         tracing::trace!(command = %command, "Looking up plugin by command name or alias");
 
@@ -469,7 +459,6 @@ impl Clone for PluginRuntime {
     }
 }
 
-/// Handles versioned directories (e.g., plugins/adi.tasks/0.8.8/plugin.toml)
 pub(crate) fn find_plugin_toml_path(plugin_dir: &std::path::Path) -> Option<PathBuf> {
     let version_file = plugin_dir.join(".version");
     if version_file.exists() {

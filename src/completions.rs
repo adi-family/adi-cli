@@ -1,8 +1,3 @@
-//! Shell completion generation with dynamic plugin support.
-//!
-//! Makes `adi <Tab>` work in bash/zsh/fish, including plugin commands
-//! discovered from installed manifests. Auto-invoked on every CLI run.
-
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -60,7 +55,6 @@ pub fn get_dynamic_completion_plugins() -> &'static Vec<String> {
     DYNAMIC_COMPLETION_PLUGINS.get_or_init(Vec::new)
 }
 
-/// Reads manifest files synchronously (no tokio runtime needed).
 fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
     use lib_plugin_manifest::PluginManifest;
 
@@ -75,7 +69,9 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
     let mut dynamic_plugins = Vec::new();
 
     for manifest_path in collect_cli_manifest_paths(&plugins_dir) {
-        let Ok(manifest) = PluginManifest::from_file(&manifest_path) else { continue };
+        let Ok(manifest) = PluginManifest::from_file(&manifest_path) else {
+            continue;
+        };
         let Some(cli) = &manifest.cli else { continue };
 
         let (subcmd, is_dynamic) = build_cli_subcommand(cli);
@@ -86,7 +82,10 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
         cmd = cmd.subcommand(subcmd);
     }
 
-    tracing::trace!(dynamic_count = dynamic_plugins.len(), "Plugin manifest scan complete");
+    tracing::trace!(
+        dynamic_count = dynamic_plugins.len(),
+        "Plugin manifest scan complete"
+    );
     let _ = DYNAMIC_COMPLETION_PLUGINS.set(dynamic_plugins);
     cmd
 }
@@ -94,7 +93,9 @@ fn add_plugin_commands_from_manifests(mut cmd: Command) -> Command {
 fn build_cli_subcommand(cli: &lib_plugin_manifest::CliConfig) -> (Command, bool) {
     let name: &'static str = Box::leak(cli.command.clone().into_boxed_str());
     let desc: &'static str = Box::leak(cli.description.clone().into_boxed_str());
-    let mut subcmd = Command::new(name).about(desc).allow_external_subcommands(true);
+    let mut subcmd = Command::new(name)
+        .about(desc)
+        .allow_external_subcommands(true);
 
     for alias in &cli.aliases {
         let alias_static: &'static str = Box::leak(alias.clone().into_boxed_str());
@@ -338,7 +339,13 @@ _adi "$@""#
 }
 
 const ZSH_BUILTIN_COMMANDS: &[&str] = &[
-    "plugin", "search", "services", "run", "self-update", "completions", "info",
+    "plugin",
+    "search",
+    "services",
+    "run",
+    "self-update",
+    "completions",
+    "info",
 ];
 
 fn build_zsh_plugin_command_entries(cmd: &Command) -> String {
@@ -348,7 +355,10 @@ fn build_zsh_plugin_command_entries(cmd: &Command) -> String {
         if ZSH_BUILTIN_COMMANDS.contains(&name) {
             continue;
         }
-        let about = subcmd.get_about().map(|s| s.to_string()).unwrap_or_default();
+        let about = subcmd
+            .get_about()
+            .map(|s| s.to_string())
+            .unwrap_or_default();
         entries.push_str(&format!("                '{name}:{about}'\n"));
     }
     entries
@@ -473,7 +483,10 @@ complete -c {bin_name} -f
 fn append_fish_subcommand_completions(script: &mut String, bin_name: &str, cmd: &Command) {
     for subcmd in cmd.get_subcommands() {
         let name = subcmd.get_name();
-        let about = subcmd.get_about().map(|s| s.to_string()).unwrap_or_default();
+        let about = subcmd
+            .get_about()
+            .map(|s| s.to_string())
+            .unwrap_or_default();
         script.push_str(&format!(
             r#"complete -c {bin_name} -n "__fish_use_subcommand" -a "{name}" -d "{about}"
 "#
@@ -487,7 +500,11 @@ fn append_fish_subcommand_completions(script: &mut String, bin_name: &str, cmd: 
     }
 }
 
-fn append_fish_dynamic_completions(script: &mut String, bin_name: &str, dynamic_plugins: &[String]) {
+fn append_fish_dynamic_completions(
+    script: &mut String,
+    bin_name: &str,
+    dynamic_plugins: &[String],
+) {
     for plugin_cmd in dynamic_plugins {
         script.push_str(&format!(
             r#"complete -c {bin_name} -n "__fish_seen_subcommand_from {plugin_cmd}" -a "(__adi_dynamic_complete {plugin_cmd} (count (commandline -opc)) (commandline -opc)[3..-1])"
@@ -516,7 +533,6 @@ fn add_to_shell_config(shell: CompletionShell, snippet: &str) -> anyhow::Result<
     Ok(())
 }
 
-/// Called after plugin install/uninstall.
 pub fn regenerate_completions<C: CommandFactory>(bin_name: &str) -> anyhow::Result<()> {
     tracing::trace!(bin_name = %bin_name, "Regenerating completions for installed shells");
     for shell in [
@@ -558,7 +574,6 @@ pub fn detect_shell() -> Option<CompletionShell> {
     })
 }
 
-/// Idempotent — only regenerates when plugins change.
 pub fn ensure_completions_installed<C: CommandFactory>(bin_name: &str) {
     let Some(shell) = detect_shell() else {
         tracing::trace!("Could not detect shell, skipping completions");

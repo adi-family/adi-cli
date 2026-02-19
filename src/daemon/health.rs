@@ -1,8 +1,3 @@
-//! Health monitoring and watchdog for managed services
-//!
-//! Periodically checks if service processes are still running and
-//! restarts them according to their restart policy.
-
 use super::protocol::ServiceState;
 use super::services::{ManagedService, ServiceManager};
 use std::collections::HashMap;
