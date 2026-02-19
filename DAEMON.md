@@ -221,9 +221,6 @@ pub enum Request {
     // Command execution
     Run { command: String, args: Vec<String> },
     SudoRun { command: String, args: Vec<String>, reason: String },
-    
-    // Convenience privileged operations
-    BindPort { port: u16, target_port: u16 },
 }
 
 #[derive(Archive, Deserialize, Serialize)]
@@ -326,26 +323,6 @@ impl CommandExecutor {
             .args(args)
             .output()
             .await
-    }
-    
-    /// Bind privileged port to high port (platform-specific)
-    pub async fn bind_port(&self, port: u16, target_port: u16) -> Result<()> {
-        #[cfg(target_os = "linux")]
-        {
-            self.sudo_run("iptables", &[
-                "-t", "nat", "-A", "PREROUTING",
-                "-p", "tcp", "--dport", &port.to_string(),
-                "-j", "REDIRECT", "--to-port", &target_port.to_string()
-            ]).await?;
-        }
-        
-        #[cfg(target_os = "macos")]
-        {
-            // macOS uses pf (packet filter)
-            self.sudo_run("pfctl", &[/* ... */]).await?;
-        }
-        
-        Ok(())
     }
 }
 ```
@@ -613,9 +590,6 @@ let output = client.run("ls", &["-la"]).await?;
 
 // Execute privileged command (runs as `adi-root` user)
 let output = client.sudo_run("iptables", &["-L"], "List firewall rules").await?;
-
-// Convenience: bind port 80 → 8080
-client.bind_port(80, 8080).await?;
 ```
 
 ## Internal Configuration

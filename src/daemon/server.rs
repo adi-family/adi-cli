@@ -338,18 +338,6 @@ impl DaemonServer {
                     },
                 }
             }
-
-            ArchivedRequest::BindPort { port, target_port } => {
-                let port_val: u16 = (*port).into();
-                let target_val: u16 = (*target_port).into();
-                info!("Handling: BindPort({} -> {})", port_val, target_val);
-                match self.executor.bind_port(port_val, target_val).await {
-                    Ok(()) => Response::Ok,
-                    Err(e) => Response::Error {
-                        message: e.to_string(),
-                    },
-                }
-            }
         }
     }
 }

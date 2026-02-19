@@ -18,14 +18,12 @@ const DAEMON_START_TIMEOUT: Duration = Duration::from_secs(5);
 /// Interval for checking daemon startup
 const DAEMON_START_CHECK_INTERVAL: Duration = Duration::from_millis(100);
 
-/// Client for communicating with the ADI daemon
 pub struct DaemonClient {
     socket_path: PathBuf,
     timeout: Duration,
 }
 
 impl DaemonClient {
-    /// Create a new daemon client with default socket path
     pub fn new() -> Self {
         Self {
             socket_path: clienv::daemon_socket_path(),
@@ -33,7 +31,6 @@ impl DaemonClient {
         }
     }
 
-    /// Create a daemon client with custom socket path
     pub fn with_socket_path(socket_path: PathBuf) -> Self {
         Self {
             socket_path,
@@ -41,18 +38,15 @@ impl DaemonClient {
         }
     }
 
-    /// Set timeout for operations
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
     }
 
-    /// Check if daemon socket exists (daemon may be running)
     pub fn socket_exists(&self) -> bool {
         self.socket_path.exists()
     }
 
-    /// Check if daemon is running by sending a ping
     pub async fn is_running(&self) -> bool {
         if !self.socket_exists() {
             return false;
@@ -60,7 +54,6 @@ impl DaemonClient {
         self.ping().await.is_ok()
     }
 
-    /// Ping the daemon
     pub async fn ping(&self) -> Result<(u64, String)> {
         let response = self.request(&Request::Ping).await?;
         match response {
@@ -73,7 +66,6 @@ impl DaemonClient {
         }
     }
 
-    /// Shutdown the daemon
     pub async fn shutdown(&self, graceful: bool) -> Result<()> {
         let response = self.request(&Request::Shutdown { graceful }).await?;
         match response {
@@ -83,7 +75,6 @@ impl DaemonClient {
         }
     }
 
-    /// Start a service
     pub async fn start_service(&self, name: &str, config: Option<ServiceConfig>) -> Result<()> {
         let response = self
             .request(&Request::StartService {
@@ -98,7 +89,6 @@ impl DaemonClient {
         }
     }
 
-    /// Stop a service
     pub async fn stop_service(&self, name: &str, force: bool) -> Result<()> {
         let response = self
             .request(&Request::StopService {
@@ -113,7 +103,6 @@ impl DaemonClient {
         }
     }
 
-    /// Restart a service
     pub async fn restart_service(&self, name: &str) -> Result<()> {
         let response = self
             .request(&Request::RestartService {
@@ -127,7 +116,6 @@ impl DaemonClient {
         }
     }
 
-    /// List all services
     pub async fn list_services(&self) -> Result<Vec<ServiceInfo>> {
         let response = self.request(&Request::ListServices).await?;
         match response {
@@ -137,7 +125,6 @@ impl DaemonClient {
         }
     }
 
-    /// Get service logs
     pub async fn service_logs(&self, name: &str, lines: usize) -> Result<Vec<String>> {
         let response = self
             .request(&Request::ServiceLogs {
@@ -206,20 +193,6 @@ impl DaemonClient {
         }
     }
 
-    /// Bind a privileged port to a high port
-    pub async fn bind_port(&self, port: u16, target_port: u16) -> Result<()> {
-        let response = self
-            .request(&Request::BindPort { port, target_port })
-            .await?;
-        match response {
-            Response::Ok => Ok(()),
-            Response::SudoDenied { reason } => Err(anyhow!("Port bind denied: {}", reason)),
-            Response::Error { message } => Err(anyhow!("Port bind failed: {}", message)),
-            _ => Err(anyhow!("Unexpected response")),
-        }
-    }
-
-    /// Ensure daemon is running, auto-starting if needed
     pub async fn ensure_running(&self) -> Result<()> {
         if self.is_running().await {
             debug!("Daemon already running");
@@ -248,7 +221,6 @@ impl DaemonClient {
         ))
     }
 
-    /// Send a request and receive a response
     async fn request(&self, request: &Request) -> Result<Response> {
         let result = tokio::time::timeout(self.timeout, self.request_inner(request)).await;
 
@@ -315,19 +287,14 @@ impl Default for DaemonClient {
     }
 }
 
-/// Output from a command execution
 #[derive(Debug, Clone)]
 pub struct CommandOutput {
-    /// Exit code (0 = success)
     pub exit_code: i32,
-    /// Standard output
     pub stdout: Vec<u8>,
-    /// Standard error
     pub stderr: Vec<u8>,
 }
 
 impl CommandOutput {
-    /// Check if command succeeded (exit code 0)
     pub fn success(&self) -> bool {
         self.exit_code == 0
     }
@@ -343,7 +310,6 @@ impl CommandOutput {
     }
 }
 
-/// Start the daemon process in the background
 fn start_daemon() -> Result<u32> {
     let exe = std::env::current_exe()?;
     let log_path = clienv::daemon_log_path();
@@ -367,7 +333,6 @@ fn start_daemon() -> Result<u32> {
     Ok(pid)
 }
 
-/// Deserialize archived response to owned response
 fn deserialize_response(archived: &ArchivedResponse) -> Result<Response> {
     use super::protocol::ArchivedServiceInfo;
 
