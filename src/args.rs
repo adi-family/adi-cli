@@ -70,6 +70,12 @@ pub(crate) enum Commands {
     /// Select and persist the active ADI theme
     Theme,
 
+    /// Manage CLI configuration (interactive in TTY, shows config otherwise)
+    Config {
+        #[command(subcommand)]
+        command: Option<ConfigCommands>,
+    },
+
     /// Show CLI info: version, paths, installed plugins, and available commands
     #[command(visible_alias = "i", visible_alias = "h")]
     Info,
@@ -151,6 +157,18 @@ pub(crate) enum DaemonCommands {
         /// Follow log output (stream continuously)
         #[arg(short, long)]
         follow: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum ConfigCommands {
+    /// Show current configuration
+    Show,
+
+    /// Enable or disable power user mode
+    PowerUser {
+        /// Set to "true" to enable or "false" to disable
+        enable: String,
     },
 }
 

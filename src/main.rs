@@ -1,4 +1,5 @@
 mod args;
+mod cmd_config;
 mod cmd_daemon;
 mod cmd_external;
 mod cmd_info;
@@ -84,6 +85,10 @@ async fn dispatch_command(command: Commands) -> anyhow::Result<()> {
         Commands::Theme => {
             tracing::trace!("Dispatching: theme");
             cmd_theme::cmd_theme()?
+        }
+        Commands::Config { command } => {
+            tracing::trace!("Dispatching: config");
+            cmd_config::cmd_config(command).await?
         }
         Commands::Info => {
             tracing::trace!("Dispatching: info");

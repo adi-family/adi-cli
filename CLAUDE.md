@@ -17,6 +17,9 @@ adi-cli, rust, plugin-manager, plugin-registry, cross-platform
 - `adi services` - List registered services from loaded plugins
 - `adi run [plugin-id]` - Run a plugin's CLI interface (lists runnable plugins if omitted)
 - `adi self-update` - Update adi CLI itself
+- `adi config` - Interactive config editor (TTY) or show config (non-TTY)
+- `adi config show` - Show current configuration
+- `adi config power-user <true|false>` - Enable or disable power user mode
 
 ## Architecture
 - Plugin-based system using dynamic libraries (cdylib)
@@ -46,12 +49,18 @@ adi-cli, rust, plugin-manager, plugin-registry, cross-platform
 
 ### User Config
 - Location: `~/.config/adi/config.toml`
-- Format: TOML with user preferences (language, etc.)
+- Format: TOML with user preferences (language, theme, power_user)
 - Auto-created on first interactive run when language is selected
+
+### Power User Mode
+- Enables advanced features and verbose output
+- Set via: `adi config power-user true` or `ADI_POWER_USER=true`
+- Check with: `cli::clienv::is_power_user()` (env var > config > default false)
 
 ## Environment Variables
 - `ADI_REGISTRY_URL` - Override default plugin registry URL
 - `ADI_LANG` - Set language (e.g., `en-US`, `zh-CN`, `uk-UA`)
+- `ADI_POWER_USER` - Enable power user mode (true/false)
 
 ## Deployment
 - Cross-platform: macOS (Intel/ARM), Linux (x86_64), Windows (x86_64)

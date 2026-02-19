@@ -11,6 +11,7 @@ env_vars! {
     AdiConfigDir       => "ADI_CONFIG_DIR",
     AdiTheme           => "ADI_THEME",
     AdiLang            => "ADI_LANG",
+    AdiPowerUser       => "ADI_POWER_USER",
     Lang               => "LANG",
     AdiAutoInstall     => "ADI_AUTO_INSTALL",
     AdiRegistryUrl     => "ADI_REGISTRY_URL",
@@ -62,6 +63,30 @@ pub fn system_lang() -> Option<String> {
     let val = env_opt(EnvVar::Lang.as_str());
     tracing::trace!(value = ?val, "LANG env var");
     val
+}
+
+/// Power user mode from env var ($ADI_POWER_USER)
+pub fn power_user_env() -> Option<bool> {
+    let val = env_opt(EnvVar::AdiPowerUser.as_str());
+    let result = val.as_ref().map(|v| lib_env_parse::is_truthy(v));
+    tracing::trace!(value = ?result, "ADI_POWER_USER env var");
+    result
+}
+
+/// Check if power user mode is enabled (env var > config > default false)
+pub fn is_power_user() -> bool {
+    // Priority: env var > config > default (false)
+    if let Some(env_val) = power_user_env() {
+        return env_val;
+    }
+
+    if let Ok(config) = crate::user_config::UserConfig::load() {
+        if let Some(power_user) = config.power_user {
+            return power_user;
+        }
+    }
+
+    false
 }
 
 /// Whether auto-install is disabled ($ADI_AUTO_INSTALL=false|0|no|off)

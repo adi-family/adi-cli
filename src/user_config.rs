@@ -9,6 +9,8 @@ pub struct UserConfig {
     pub language: Option<String>,
     /// Preferred theme (e.g., "indigo", "scarlet", "emerald")
     pub theme: Option<String>,
+    /// Power user mode - enables advanced features and verbose output
+    pub power_user: Option<bool>,
 }
 
 impl UserConfig {
@@ -32,7 +34,7 @@ impl UserConfig {
         let config: Self = toml::from_str(&content)
             .with_context(|| format!("Failed to parse config from {}", path.display()))?;
 
-        tracing::trace!(language = ?config.language, theme = ?config.theme, "User config loaded");
+        tracing::trace!(language = ?config.language, theme = ?config.theme, power_user = ?config.power_user, "User config loaded");
         Ok(config)
     }
 
