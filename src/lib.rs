@@ -1,5 +1,6 @@
 pub mod clienv;
 pub mod completions;
+pub mod daemon;
 pub mod error;
 pub mod plugin_registry;
 pub mod plugin_runtime;

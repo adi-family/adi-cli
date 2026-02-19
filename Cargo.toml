@@ -48,3 +48,15 @@ lib-console-output = { path = "../lib/lib-console-output" }
 
 # Environment variable parsing
 lib-env-parse = { path = "../lib/lib-env-parse" }
+
+# Daemon core (process management, lifecycle, PID files)
+lib-daemon-core = { path = "../lib/lib-daemon-core" }
+
+# Zero-copy serialization for IPC
+rkyv = { version = "0.8" }
+
+# Cross-platform local sockets
+interprocess = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

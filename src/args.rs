@@ -74,9 +74,84 @@ pub(crate) enum Commands {
     #[command(visible_alias = "i", visible_alias = "h")]
     Info,
 
+    /// Manage background daemon and services
+    Daemon {
+        #[command(subcommand)]
+        command: DaemonCommands,
+    },
+
     /// Plugin-provided commands (dynamically discovered from installed plugins)
     #[command(external_subcommand)]
     External(Vec<String>),
+}
+
+#[derive(Subcommand)]
+pub(crate) enum DaemonCommands {
+    /// Run the daemon in foreground (for debugging)
+    #[command(visible_alias = "fg")]
+    Run,
+
+    /// Start the daemon in background
+    #[command(visible_alias = "up")]
+    Start,
+
+    /// Stop the daemon gracefully
+    #[command(visible_alias = "down")]
+    Stop {
+        /// Force stop immediately (SIGKILL)
+        #[arg(short, long)]
+        force: bool,
+    },
+
+    /// Restart the daemon
+    Restart,
+
+    /// Show daemon and services status
+    #[command(visible_alias = "ps")]
+    Status,
+
+    /// Start a managed service
+    #[command(name = "start")]
+    StartService {
+        /// Service name (e.g., hive, indexer, llm-proxy)
+        service: String,
+    },
+
+    /// Stop a managed service
+    #[command(name = "stop")]
+    StopService {
+        /// Service name
+        service: String,
+
+        /// Force stop immediately (SIGKILL)
+        #[arg(short, long)]
+        force: bool,
+    },
+
+    /// Restart a managed service
+    #[command(name = "restart")]
+    RestartService {
+        /// Service name
+        service: String,
+    },
+
+    /// List all registered services
+    #[command(visible_alias = "ls")]
+    Services,
+
+    /// View service logs
+    Logs {
+        /// Service name
+        service: String,
+
+        /// Number of lines to show
+        #[arg(short = 'n', long, default_value = "50")]
+        lines: usize,
+
+        /// Follow log output (stream continuously)
+        #[arg(short, long)]
+        follow: bool,
+    },
 }
 
 #[derive(Subcommand)]

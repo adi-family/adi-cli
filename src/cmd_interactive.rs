@@ -3,7 +3,7 @@ use lib_console_output::input::{Confirm, Input, Select, SelectOption};
 use lib_console_output::theme;
 use lib_i18n_core::t;
 
-use crate::args::{Commands, PluginCommands};
+use crate::args::{Commands, DaemonCommands, PluginCommands};
 
 fn print_welcome() {
     let version = env!("CARGO_PKG_VERSION");
@@ -42,6 +42,7 @@ enum BuiltinCommand {
     Run,
     Logs,
     Theme,
+    Daemon,
 }
 
 /// Returns `None` if user cancels.
@@ -100,6 +101,8 @@ fn builtin_command_options() -> Vec<SelectOption<CommandEntry>> {
             .with_description(t!("interactive-cmd-run-desc")),
         SelectOption::new(t!("interactive-cmd-logs"), CommandEntry::Builtin(BuiltinCommand::Logs))
             .with_description(t!("interactive-cmd-logs-desc")),
+        SelectOption::new(t!("interactive-cmd-daemon"), CommandEntry::Builtin(BuiltinCommand::Daemon))
+            .with_description(t!("interactive-cmd-daemon-desc")),
         SelectOption::new(t!("interactive-cmd-self-update"), CommandEntry::Builtin(BuiltinCommand::SelfUpdate))
             .with_description(t!("interactive-cmd-self-update-desc")),
         SelectOption::new(t!("interactive-cmd-theme"), CommandEntry::Builtin(BuiltinCommand::Theme))
@@ -119,6 +122,7 @@ fn prompt_builtin_args(cmd: BuiltinCommand) -> Option<Commands> {
         }),
         BuiltinCommand::Logs => prompt_logs(),
         BuiltinCommand::Theme => Some(Commands::Theme),
+        BuiltinCommand::Daemon => prompt_daemon(),
     }
 }
 
@@ -206,4 +210,32 @@ fn prompt_logs() -> Option<Commands> {
         level: None,
         service: None,
     })
+}
+
+fn prompt_daemon() -> Option<Commands> {
+    let subcmd = Select::new(t!("interactive-daemon-select"))
+        .items([
+            (t!("interactive-daemon-status"), "status"),
+            (t!("interactive-daemon-start"), "start"),
+            (t!("interactive-daemon-stop"), "stop"),
+            (t!("interactive-daemon-restart"), "restart"),
+            (t!("interactive-daemon-services"), "services"),
+            (t!("interactive-daemon-run"), "run"),
+        ])
+        .run()?;
+
+    dispatch_daemon_subcmd(subcmd)
+}
+
+fn dispatch_daemon_subcmd(subcmd: &str) -> Option<Commands> {
+    let cmd = match subcmd {
+        "status" => DaemonCommands::Status,
+        "start" => DaemonCommands::Start,
+        "stop" => DaemonCommands::Stop { force: false },
+        "restart" => DaemonCommands::Restart,
+        "services" => DaemonCommands::Services,
+        "run" => DaemonCommands::Run,
+        _ => return None,
+    };
+    Some(Commands::Daemon { command: cmd })
 }

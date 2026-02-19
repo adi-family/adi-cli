@@ -174,6 +174,8 @@ interactive-cmd-self-update-desc = Update adi CLI to the latest version
 interactive-cmd-theme-desc = Preview and select a color theme
 interactive-cmd-completions-desc = Generate shell completions
 interactive-cmd-init-desc = Initialize shell completions
+interactive-cmd-daemon = daemon
+interactive-cmd-daemon-desc = Manage background daemon and services
 
 # Argument prompts
 interactive-self-update-force = Force update even if on latest version?
@@ -199,6 +201,15 @@ interactive-plugin-install-id = Plugin ID to install (e.g., adi.tasks)
 interactive-plugin-update-id = Plugin ID to update
 interactive-plugin-uninstall-id = Plugin ID to uninstall
 interactive-plugin-path-id = Plugin ID
+
+# Daemon subcommand prompts
+interactive-daemon-select = Select daemon action
+interactive-daemon-status = Show status
+interactive-daemon-start = Start daemon
+interactive-daemon-stop = Stop daemon
+interactive-daemon-restart = Restart daemon
+interactive-daemon-services = List services
+interactive-daemon-run = Run in foreground
 
 # ============================================================================
 # COMMON/SHARED MESSAGES

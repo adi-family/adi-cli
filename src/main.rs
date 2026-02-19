@@ -1,4 +1,5 @@
 mod args;
+mod cmd_daemon;
 mod cmd_external;
 mod cmd_info;
 mod cmd_interactive;
@@ -87,6 +88,10 @@ async fn dispatch_command(command: Commands) -> anyhow::Result<()> {
         Commands::Info => {
             tracing::trace!("Dispatching: info");
             cmd_info::cmd_info().await?
+        }
+        Commands::Daemon { command } => {
+            tracing::trace!("Dispatching: daemon");
+            cmd_daemon::cmd_daemon(command).await?
         }
         Commands::External(args) => {
             tracing::trace!(args = ?args, "Dispatching: external");
