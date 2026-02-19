@@ -216,16 +216,17 @@ impl PluginRuntime {
     pub async fn run_cli_command(&self, plugin_id: &str, context_json: &str) -> Result<String> {
         tracing::trace!(plugin_id = %plugin_id, "Running CLI command");
 
-        let manager = self.manager_v3.read().unwrap();
-        let plugin = manager
-            .get_cli_commands(plugin_id)
-            .ok_or_else(|| crate::error::InstallerError::PluginNotFound {
-                id: plugin_id.to_string(),
-            })?;
+        let plugin = {
+            let manager = self.manager_v3.read().unwrap();
+            manager
+                .get_cli_commands(plugin_id)
+                .ok_or_else(|| crate::error::InstallerError::PluginNotFound {
+                    id: plugin_id.to_string(),
+                })?
+        };
 
         let ctx = self.parse_cli_context(context_json)?;
         tracing::trace!(plugin_id = %plugin_id, command = %ctx.command, subcommand = ?ctx.subcommand, args = ?ctx.args, "Dispatching command to plugin");
-        drop(manager);
 
         let result = plugin
             .run_command(&ctx)
@@ -243,13 +244,14 @@ impl PluginRuntime {
     }
 
     pub async fn list_cli_commands(&self, plugin_id: &str) -> Result<String> {
-        let manager = self.manager_v3.read().unwrap();
-        let plugin = manager
-            .get_cli_commands(plugin_id)
-            .ok_or_else(|| crate::error::InstallerError::PluginNotFound {
-                id: plugin_id.to_string(),
-            })?;
-        drop(manager);
+        let plugin = {
+            let manager = self.manager_v3.read().unwrap();
+            manager
+                .get_cli_commands(plugin_id)
+                .ok_or_else(|| crate::error::InstallerError::PluginNotFound {
+                    id: plugin_id.to_string(),
+                })?
+        };
 
         let commands = plugin.list_commands().await;
         Ok(serde_json::to_string(&commands).unwrap())

@@ -8,7 +8,6 @@ use lib_console_output::{
     theme,
 };
 
-/// Handle daemon commands
 pub async fn cmd_daemon(command: DaemonCommands) -> Result<()> {
     match command {
         DaemonCommands::Run => cmd_daemon_run().await,
@@ -28,7 +27,6 @@ pub async fn cmd_daemon(command: DaemonCommands) -> Result<()> {
     }
 }
 
-/// Run the daemon in foreground (for debugging)
 async fn cmd_daemon_run() -> Result<()> {
     println!(
         "{} Running daemon in foreground (Ctrl+C to stop)",
@@ -49,7 +47,6 @@ async fn cmd_daemon_run() -> Result<()> {
     server.run().await
 }
 
-/// Start the daemon in background
 async fn cmd_daemon_start() -> Result<()> {
     let client = DaemonClient::new();
 
@@ -78,7 +75,6 @@ async fn cmd_daemon_start() -> Result<()> {
     Ok(())
 }
 
-/// Stop the daemon
 async fn cmd_daemon_stop(force: bool) -> Result<()> {
     let client = DaemonClient::new();
 
@@ -111,7 +107,6 @@ async fn cmd_daemon_stop(force: bool) -> Result<()> {
     Ok(())
 }
 
-/// Restart the daemon
 async fn cmd_daemon_restart() -> Result<()> {
     println!("{} Restarting daemon...", theme::icons::INFO);
     cmd_daemon_stop(false).await?;
@@ -119,7 +114,6 @@ async fn cmd_daemon_restart() -> Result<()> {
     cmd_daemon_start().await
 }
 
-/// Show daemon and services status
 async fn cmd_daemon_status() -> Result<()> {
     let client = DaemonClient::new();
 
@@ -201,7 +195,6 @@ async fn cmd_daemon_status() -> Result<()> {
     Ok(())
 }
 
-/// Start a managed service
 async fn cmd_start_service(name: &str) -> Result<()> {
     let client = DaemonClient::new();
     client.ensure_running().await?;
@@ -221,7 +214,6 @@ async fn cmd_start_service(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Stop a managed service
 async fn cmd_stop_service(name: &str, force: bool) -> Result<()> {
     let client = DaemonClient::new();
 
@@ -253,7 +245,6 @@ async fn cmd_stop_service(name: &str, force: bool) -> Result<()> {
     Ok(())
 }
 
-/// Restart a managed service
 async fn cmd_restart_service(name: &str) -> Result<()> {
     let client = DaemonClient::new();
     client.ensure_running().await?;
@@ -273,7 +264,6 @@ async fn cmd_restart_service(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// List all managed services
 async fn cmd_list_services() -> Result<()> {
     let client = DaemonClient::new();
 
@@ -322,7 +312,6 @@ async fn cmd_list_services() -> Result<()> {
     Ok(())
 }
 
-/// View service logs
 async fn cmd_service_logs(name: &str, lines: usize, follow: bool) -> Result<()> {
     let client = DaemonClient::new();
 
@@ -347,7 +336,7 @@ async fn cmd_service_logs(name: &str, lines: usize, follow: bool) -> Result<()> 
         if logs.is_empty() {
             println!("{} No logs available for {}", theme::icons::INFO, name);
         } else {
-            Section::new(&format!("Logs: {}", name)).print();
+            Section::new(format!("Logs: {}", name)).print();
             println!();
             for line in logs {
                 println!("  {}", line);
@@ -359,7 +348,6 @@ async fn cmd_service_logs(name: &str, lines: usize, follow: bool) -> Result<()> 
     Ok(())
 }
 
-/// Format state with colors
 fn format_state(state: &str) -> String {
     match state {
         "running" => theme::success("running").to_string(),
@@ -371,7 +359,6 @@ fn format_state(state: &str) -> String {
     }
 }
 
-/// Format duration in human-readable form
 fn format_duration(secs: u64) -> String {
     if secs < 60 {
         format!("{}s", secs)

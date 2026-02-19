@@ -224,7 +224,7 @@ fn should_check_translation(plugins_dir: &std::path::Path, translation_id: &str)
             .modified()
             .ok()
             .and_then(|t| t.elapsed().ok())
-            .map_or(true, |age| age > std::time::Duration::from_secs(86400)),
+            .is_none_or(|age| age > std::time::Duration::from_secs(86400)),
         Err(_) => true,
     };
     tracing::trace!(translation_id = %translation_id, should_check = should, "Translation check status");

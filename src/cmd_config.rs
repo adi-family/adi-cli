@@ -112,11 +112,8 @@ fn cmd_config_interactive() -> anyhow::Result<()> {
                 let _ = term.clear_last_lines(CONFIG_OPTIONS.len());
                 let opt = &CONFIG_OPTIONS[cursor];
                 
-                match opt.key {
-                    "power_user" => {
-                        toggle_power_user()?;
-                    }
-                    _ => {}
+                if opt.key == "power_user" {
+                    toggle_power_user()?;
                 }
                 
                 // Reload config and re-render

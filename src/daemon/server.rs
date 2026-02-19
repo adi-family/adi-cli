@@ -11,15 +11,10 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use tracing::{debug, error, info, trace, warn};
 
-/// Daemon server configuration
 pub struct DaemonConfig {
-    /// Path to Unix socket
     pub socket_path: std::path::PathBuf,
-    /// Path to PID file
     pub pid_path: std::path::PathBuf,
-    /// Path to log file
     pub log_path: std::path::PathBuf,
-    /// Services to auto-start
     pub auto_start: Vec<String>,
 }
 
@@ -34,22 +29,15 @@ impl Default for DaemonConfig {
     }
 }
 
-/// The daemon server
 pub struct DaemonServer {
-    /// Configuration
     config: DaemonConfig,
-    /// Service manager
     services: Arc<ServiceManager>,
-    /// Command executor
     executor: Arc<CommandExecutor>,
-    /// Daemon start time
     started_at: Instant,
-    /// Daemon version
     version: String,
 }
 
 impl DaemonServer {
-    /// Create a new daemon server
     pub fn new(config: DaemonConfig) -> Self {
         Self {
             config,
@@ -60,7 +48,6 @@ impl DaemonServer {
         }
     }
 
-    /// Run the daemon
     pub async fn run(self) -> Result<()> {
         info!("ADI daemon starting...");
 
@@ -199,7 +186,6 @@ impl DaemonServer {
         Ok(())
     }
 
-    /// Handle a client connection
     #[cfg(unix)]
     async fn handle_connection(&self, mut stream: tokio::net::UnixStream) -> Result<()> {
         trace!("New connection accepted");
@@ -231,7 +217,6 @@ impl DaemonServer {
         Ok(())
     }
 
-    /// Handle a client connection (non-Unix fallback)
     #[cfg(not(unix))]
     async fn handle_connection(&self, mut stream: tokio::net::TcpStream) -> Result<()> {
         trace!("New connection accepted");
@@ -261,7 +246,6 @@ impl DaemonServer {
         Ok(())
     }
 
-    /// Handle an IPC request
     async fn handle_request(&self, request: &ArchivedRequest) -> Response {
         match request {
             ArchivedRequest::Ping => {
@@ -281,7 +265,7 @@ impl DaemonServer {
 
             ArchivedRequest::StartService { name, config } => {
                 debug!("Handling: StartService({})", name);
-                let config = config.as_ref().map(|c| deserialize_service_config(c));
+                let config = config.as_ref().map(deserialize_service_config);
                 match self.services.start(name.as_str(), config).await {
                     Ok(()) => Response::Ok,
                     Err(e) => Response::Error {
@@ -370,7 +354,6 @@ impl DaemonServer {
     }
 }
 
-/// Deserialize archived service config to owned
 fn deserialize_service_config(
     archived: &super::protocol::ArchivedServiceConfig,
 ) -> super::protocol::ServiceConfig {
