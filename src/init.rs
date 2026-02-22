@@ -129,45 +129,44 @@ fn try_load_ftl(i18n: &mut I18n, lang: &str, plugin_dir: &std::path::Path) -> bo
 
 async fn get_available_languages() -> Vec<(String, String)> {
     tracing::trace!("Discovering available languages");
-    let mut languages = vec![("en-US".to_string(), "English".to_string())];
+    let base = vec![("en-US".to_string(), "English".to_string())];
 
     let manager = PluginManager::new();
     if let Ok(plugins) = manager.list_plugins().await {
-        collect_registry_languages(&mut languages, &plugins);
+        let extra = registry_languages(&plugins);
+        let languages = base.into_iter().chain(extra).collect::<Vec<_>>();
+        tracing::trace!(count = languages.len(), "Available languages discovered");
         return languages;
     }
 
     tracing::trace!("Registry unreachable, scanning installed plugins for translations");
-    collect_installed_languages(&mut languages).await;
-
+    let extra = installed_languages().await;
+    let languages = base.into_iter().chain(extra).collect::<Vec<_>>();
     tracing::trace!(count = languages.len(), "Available languages discovered");
     languages
 }
 
-fn collect_registry_languages(languages: &mut Vec<(String, String)>, plugins: &[lib_plugin_registry::PluginEntry]) {
-    for plugin in plugins {
-        if plugin.plugin_type != "translation" {
-            continue;
-        }
-        let Some(lang_code) = plugin.id.strip_prefix(cli::clienv::CLI_PLUGIN_PREFIX) else { continue };
-        if lang_code == "en-US" {
-            continue;
-        }
-        let display_name = plugin
-            .name
-            .strip_prefix("ADI CLI - ")
-            .unwrap_or(&plugin.name)
-            .to_string();
-        tracing::trace!(lang = %lang_code, name = %display_name, "Found translation plugin in registry");
-        languages.push((lang_code.to_string(), display_name));
-    }
+fn registry_languages(plugins: &[lib_plugin_registry::PluginEntry]) -> Vec<(String, String)> {
+    plugins
+        .iter()
+        .filter(|p| p.plugin_type == "translation")
+        .filter_map(|p| {
+            let lang_code = p.id.strip_prefix(cli::clienv::CLI_PLUGIN_PREFIX)?;
+            if lang_code == "en-US" {
+                return None;
+            }
+            let display_name = p.name.strip_prefix("ADI CLI - ").unwrap_or(&p.name).to_string();
+            tracing::trace!(lang = %lang_code, name = %display_name, "Found translation plugin in registry");
+            Some((lang_code.to_string(), display_name))
+        })
+        .collect()
 }
 
-async fn collect_installed_languages(languages: &mut Vec<(String, String)>) {
+async fn installed_languages() -> Vec<(String, String)> {
     let plugins_dir = lib_plugin_host::PluginConfig::default_plugins_dir();
+    let Ok(mut entries) = tokio::fs::read_dir(&plugins_dir).await else { return Vec::new() };
 
-    let Ok(mut entries) = tokio::fs::read_dir(&plugins_dir).await else { return };
-
+    let mut languages = Vec::new();
     while let Ok(Some(entry)) = entries.next_entry().await {
         let name = entry.file_name().to_string_lossy().to_string();
         let Some(lang_code) = name.strip_prefix(cli::clienv::CLI_PLUGIN_PREFIX) else { continue };
@@ -179,6 +178,7 @@ async fn collect_installed_languages(languages: &mut Vec<(String, String)>) {
         tracing::trace!(lang = %lang_code, name = %display_name, "Found installed translation plugin");
         languages.push((lang_code.to_string(), display_name));
     }
+    languages
 }
 
 async fn read_language_name_from_manifest(plugin_dir: &std::path::Path) -> Option<String> {
@@ -240,38 +240,48 @@ fn mark_translation_checked(plugins_dir: &std::path::Path, translation_id: &str)
 
 fn find_messages_ftl(plugin_dir: &std::path::Path) -> Option<std::path::PathBuf> {
     tracing::trace!(dir = %plugin_dir.display(), "Searching for messages.ftl");
+    let result = find_versioned_ftl(plugin_dir)
+        .or_else(|| find_direct_ftl(plugin_dir))
+        .or_else(|| find_subdirectory_ftl(plugin_dir));
+    if result.is_none() {
+        tracing::trace!("No messages.ftl found");
+    }
+    result
+}
 
-    let version_file = plugin_dir.join(".version");
-    if version_file.exists() {
-        if let Ok(version) = std::fs::read_to_string(&version_file) {
-            let version = version.trim();
-            let ftl_path = plugin_dir.join(version).join("messages.ftl");
-            if ftl_path.exists() {
-                tracing::trace!(path = %ftl_path.display(), "Found versioned messages.ftl");
-                return Some(ftl_path);
-            }
+fn find_versioned_ftl(plugin_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let version = std::fs::read_to_string(plugin_dir.join(".version")).ok()?;
+    let ftl_path = plugin_dir.join(version.trim()).join("messages.ftl");
+    if ftl_path.exists() {
+        tracing::trace!(path = %ftl_path.display(), "Found versioned messages.ftl");
+        Some(ftl_path)
+    } else {
+        None
+    }
+}
+
+fn find_direct_ftl(plugin_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let ftl_path = plugin_dir.join("messages.ftl");
+    if ftl_path.exists() {
+        tracing::trace!(path = %ftl_path.display(), "Found direct messages.ftl");
+        Some(ftl_path)
+    } else {
+        None
+    }
+}
+
+fn find_subdirectory_ftl(plugin_dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    std::fs::read_dir(plugin_dir).ok()?.flatten().find_map(|entry| {
+        let subdir = entry.path();
+        if !subdir.is_dir() {
+            return None;
         }
-    }
-
-    let direct_ftl = plugin_dir.join("messages.ftl");
-    if direct_ftl.exists() {
-        tracing::trace!(path = %direct_ftl.display(), "Found direct messages.ftl");
-        return Some(direct_ftl);
-    }
-
-    if let Ok(entries) = std::fs::read_dir(plugin_dir) {
-        for entry in entries.flatten() {
-            let subdir = entry.path();
-            if subdir.is_dir() {
-                let ftl_path = subdir.join("messages.ftl");
-                if ftl_path.exists() {
-                    tracing::trace!(path = %ftl_path.display(), "Found messages.ftl in subdirectory");
-                    return Some(ftl_path);
-                }
-            }
+        let ftl_path = subdir.join("messages.ftl");
+        if ftl_path.exists() {
+            tracing::trace!(path = %ftl_path.display(), "Found messages.ftl in subdirectory");
+            Some(ftl_path)
+        } else {
+            None
         }
-    }
-
-    tracing::trace!("No messages.ftl found");
-    None
+    })
 }

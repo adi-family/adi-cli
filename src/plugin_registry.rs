@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use indicatif::{ProgressBar, ProgressStyle};
 use lib_console_output::{theme, out_info, out_success, out_warn};
 use lib_i18n_core::t;
-use lib_plugin_host::{is_glob_pattern, PluginConfig, PluginInstaller, UpdateCheck};
+use lib_plugin_host::{is_glob_pattern, InstallResult, PluginConfig, PluginInstaller, UpdateCheck};
 use lib_plugin_registry::{PluginEntry, PluginInfo, SearchResults};
 
 use crate::error::Result;
@@ -90,36 +90,42 @@ impl PluginManager {
         let platform = lib_plugin_manifest::current_platform();
         tracing::trace!(id = %id, version = ?version, platform = %platform, "Installing plugin");
 
-        let info = self.installer.get_plugin_info(id).await?;
-        let info = info.ok_or_else(|| {
-            crate::error::InstallerError::PluginNotFound { id: id.to_string() }
-        })?;
-
-        let platform_build = info
-            .platforms
-            .iter()
-            .find(|p| p.platform == platform)
-            .ok_or_else(|| {
-                crate::error::InstallerError::Other(format!(
-                    "Plugin {} does not support platform {}",
-                    id, platform
-                ))
-            })?;
+        let (plugin_version, size_bytes) = self.fetch_install_metadata(id, &platform).await?;
 
         out_info!("{}", t!("plugin-install-downloading",
             "id" => id,
-            "version" => &info.version,
+            "version" => &plugin_version,
             "platform" => &platform
         ));
 
-        let pb = ProgressBar::new(platform_build.size_bytes);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-                .unwrap()
-                .progress_chars("#>-"),
-        );
+        let result = self.download_with_progress(id, version, size_bytes).await?;
 
+        tracing::trace!(id = %id, version = %result.version, path = %result.path.display(), "Plugin downloaded and extracted");
+        out_info!("{}", t!("plugin-install-extracting", "path" => &result.path.display().to_string()));
+        out_success!("{}", t!("plugin-install-success", "id" => id, "version" => &result.version));
+
+        Ok(())
+    }
+
+    async fn fetch_install_metadata(&self, id: &str, platform: &str) -> Result<(String, u64)> {
+        let info = self.installer.get_plugin_info(id).await?
+            .ok_or_else(|| crate::error::InstallerError::PluginNotFound { id: id.to_string() })?;
+
+        let size_bytes = info
+            .platforms
+            .iter()
+            .find(|p| p.platform == platform)
+            .ok_or_else(|| crate::error::InstallerError::Other(format!(
+                "Plugin {} does not support platform {}",
+                id, platform
+            )))?
+            .size_bytes;
+
+        Ok((info.version, size_bytes))
+    }
+
+    async fn download_with_progress(&self, id: &str, version: Option<&str>, size_bytes: u64) -> Result<InstallResult> {
+        let pb = create_progress_bar(size_bytes);
         let result = self
             .installer
             .install(id, version, |done, total| {
@@ -127,14 +133,8 @@ impl PluginManager {
                 pb.set_position(done);
             })
             .await?;
-
         pb.finish_with_message("downloaded");
-        tracing::trace!(id = %id, version = %result.version, path = %result.path.display(), "Plugin downloaded and extracted");
-
-        out_info!("{}", t!("plugin-install-extracting", "path" => &result.path.display().to_string()));
-        out_success!("{}", t!("plugin-install-success", "id" => id, "version" => &result.version));
-
-        Ok(())
+        Ok(result)
     }
 
     pub async fn install_with_dependencies(&self, id: &str, version: Option<&str>) -> Result<()> {
@@ -282,4 +282,15 @@ impl PluginManager {
             }
         }
     }
+}
+
+fn create_progress_bar(size_bytes: u64) -> ProgressBar {
+    let pb = ProgressBar::new(size_bytes);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+    pb
 }

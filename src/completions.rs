@@ -106,45 +106,47 @@ fn build_cli_subcommand(cli: &lib_plugin_manifest::CliConfig) -> (Command, bool)
 }
 
 fn collect_cli_manifest_paths(plugins_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
-    use std::collections::HashSet;
-
     let cmds_dir = lib_plugin_host::command_index::commands_dir(plugins_dir);
 
     if cmds_dir.exists() {
-        let indexed = lib_plugin_host::command_index::list_indexed_commands(plugins_dir);
-        if !indexed.is_empty() {
-            tracing::trace!(count = indexed.len(), "Using command index for completions");
-            let mut seen = HashSet::new();
-            return indexed
-                .into_iter()
-                .filter_map(|(_name, path)| {
-                    if seen.insert(path.clone()) {
-                        Some(path)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+        if let Some(indexed) = collect_indexed_manifest_paths(plugins_dir) {
+            return indexed;
         }
     }
 
     tracing::trace!("Command index unavailable, falling back to full scan for completions");
-    let mut paths = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(plugins_dir) {
-        for entry in entries.flatten() {
-            let plugin_dir = entry.path();
-            if !plugin_dir.is_dir() {
-                continue;
-            }
-            if entry.file_name() == lib_plugin_host::command_index::COMMANDS_DIR_NAME {
-                continue;
-            }
-            if let Some(manifest_path) = find_plugin_manifest(&plugin_dir) {
-                paths.push(manifest_path);
-            }
-        }
+    collect_scanned_manifest_paths(plugins_dir)
+}
+
+fn collect_indexed_manifest_paths(plugins_dir: &std::path::Path) -> Option<Vec<std::path::PathBuf>> {
+    use std::collections::HashSet;
+
+    let indexed = lib_plugin_host::command_index::list_indexed_commands(plugins_dir);
+    if indexed.is_empty() {
+        return None;
     }
-    paths
+
+    tracing::trace!(count = indexed.len(), "Using command index for completions");
+    let mut seen = HashSet::new();
+    Some(
+        indexed
+            .into_iter()
+            .filter_map(|(_name, path)| seen.insert(path.clone()).then_some(path))
+            .collect(),
+    )
+}
+
+fn collect_scanned_manifest_paths(plugins_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(plugins_dir) else {
+        return Vec::new();
+    };
+
+    entries
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .filter(|e| e.file_name() != lib_plugin_host::command_index::COMMANDS_DIR_NAME)
+        .filter_map(|e| find_plugin_manifest(&e.path()))
+        .collect()
 }
 
 fn find_plugin_manifest(plugin_dir: &std::path::Path) -> Option<std::path::PathBuf> {
@@ -587,33 +589,37 @@ pub fn ensure_completions_installed<C: CommandFactory>(bin_name: &str) {
 
     let completion_file = completions_dir.join(get_completion_filename(shell, bin_name));
     let marker_file = completions_dir.join(format!(".{}-installed", bin_name));
-
     let needs_shell_config = !marker_file.exists();
-    let needs_regenerate = needs_shell_config || completions_outdated(&completion_file);
 
-    if !needs_regenerate {
+    if !needs_shell_config && !completions_outdated(&completion_file) {
         tracing::trace!(shell = ?shell, "Completions are up-to-date");
         return;
     }
 
     tracing::trace!(shell = ?shell, needs_shell_config = needs_shell_config, "Regenerating completions");
-
-    if std::fs::create_dir_all(&completions_dir).is_err() {
-        return;
-    }
-
-    let Ok(file) = std::fs::File::create(&completion_file) else {
-        return;
-    };
-
-    let mut cmd = C::command();
-    cmd = add_plugin_commands_from_manifests(cmd);
-    let _ = write_completions_to_file(shell, bin_name, &cmd, file);
+    write_completion_file_if_possible::<C>(shell, bin_name, &completions_dir, &completion_file);
 
     if needs_shell_config {
         let _ = setup_shell_config(shell, &completion_file);
         let _ = std::fs::write(&marker_file, "");
     }
+}
+
+fn write_completion_file_if_possible<C: CommandFactory>(
+    shell: CompletionShell,
+    bin_name: &str,
+    completions_dir: &std::path::Path,
+    completion_file: &std::path::Path,
+) {
+    if std::fs::create_dir_all(completions_dir).is_err() {
+        return;
+    }
+    let Ok(file) = std::fs::File::create(completion_file) else {
+        return;
+    };
+    let mut cmd = C::command();
+    cmd = add_plugin_commands_from_manifests(cmd);
+    let _ = write_completions_to_file(shell, bin_name, &cmd, file);
 }
 
 fn completions_outdated(completion_file: &std::path::Path) -> bool {

@@ -121,7 +121,7 @@ impl PluginRuntime {
             Ok(loaded) => {
                 let plugin_id = manifest.plugin.id.clone();
 
-                self.manager_v3.write().unwrap().register(loaded)?;
+                self.manager_v3.write().expect("plugin manager lock poisoned").register(loaded)?;
 
                 tracing::info!("Loaded v3 plugin: {}", plugin_id);
                 Ok(())
@@ -187,7 +187,7 @@ impl PluginRuntime {
     pub fn list_installed(&self) -> Vec<String> {
         self.manager_v3
             .read()
-            .unwrap()
+            .expect("plugin manager lock poisoned")
             .list_plugins()
             .into_iter()
             .map(|p| p.id)
@@ -195,7 +195,7 @@ impl PluginRuntime {
     }
 
     pub fn list_runnable_plugins(&self) -> Vec<(String, String)> {
-        let manager = self.manager_v3.read().unwrap();
+        let manager = self.manager_v3.read().expect("plugin manager lock poisoned");
         manager
             .all_cli_commands()
             .into_iter()
@@ -210,18 +210,18 @@ impl PluginRuntime {
     }
 
     pub fn get_log_provider(&self, plugin_id: &str) -> Option<std::sync::Arc<dyn lib_plugin_abi_v3::logs::LogProvider>> {
-        self.manager_v3.read().unwrap().get_log_provider(plugin_id)
+        self.manager_v3.read().expect("plugin manager lock poisoned").get_log_provider(plugin_id)
     }
 
     pub fn get_daemon_service(&self, plugin_id: &str) -> Option<std::sync::Arc<dyn lib_plugin_abi_v3::daemon::DaemonService>> {
-        self.manager_v3.read().unwrap().get_daemon_service(plugin_id)
+        self.manager_v3.read().expect("plugin manager lock poisoned").get_daemon_service(plugin_id)
     }
 
     pub async fn run_cli_command(&self, plugin_id: &str, context_json: &str) -> Result<String> {
         tracing::trace!(plugin_id = %plugin_id, "Running CLI command");
 
         let plugin = {
-            let manager = self.manager_v3.read().unwrap();
+            let manager = self.manager_v3.read().expect("plugin manager lock poisoned");
             manager
                 .get_cli_commands(plugin_id)
                 .ok_or_else(|| crate::error::InstallerError::PluginNotFound {
@@ -244,12 +244,12 @@ impl PluginRuntime {
             "stdout": result.stdout,
             "stderr": result.stderr,
         }))
-        .unwrap())
+        .expect("JSON serialization cannot fail for known structure"))
     }
 
     pub async fn list_cli_commands(&self, plugin_id: &str) -> Result<String> {
         let plugin = {
-            let manager = self.manager_v3.read().unwrap();
+            let manager = self.manager_v3.read().expect("plugin manager lock poisoned");
             manager
                 .get_cli_commands(plugin_id)
                 .ok_or_else(|| crate::error::InstallerError::PluginNotFound {
@@ -258,7 +258,7 @@ impl PluginRuntime {
         };
 
         let commands = plugin.list_commands().await;
-        Ok(serde_json::to_string(&commands).unwrap())
+        Ok(serde_json::to_string(&commands).expect("JSON serialization cannot fail for plugin commands"))
     }
 
     fn parse_cli_context(&self, context_json: &str) -> Result<lib_plugin_abi_v3::cli::CliContext> {
