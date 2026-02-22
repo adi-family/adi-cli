@@ -1,6 +1,6 @@
 [package]
 name = "cli"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2021"
 license = "BSL-1.0"
 description = "CLI for ADI family components - component installer and manager"
@@ -51,6 +51,9 @@ lib-env-parse = { path = "../lib/lib-env-parse" }
 
 # Daemon core (process management, lifecycle, PID files)
 lib-daemon-core = { path = "../lib/lib-daemon-core" }
+
+# Daemon client (IPC protocol, client)
+lib-daemon-client = { path = "../lib/lib-daemon-client" }
 
 # Zero-copy serialization for IPC
 rkyv = { version = "0.8" }
