@@ -213,6 +213,10 @@ impl PluginRuntime {
         self.manager_v3.read().unwrap().get_log_provider(plugin_id)
     }
 
+    pub fn get_daemon_service(&self, plugin_id: &str) -> Option<std::sync::Arc<dyn lib_plugin_abi_v3::daemon::DaemonService>> {
+        self.manager_v3.read().unwrap().get_daemon_service(plugin_id)
+    }
+
     pub async fn run_cli_command(&self, plugin_id: &str, context_json: &str) -> Result<String> {
         tracing::trace!(plugin_id = %plugin_id, "Running CLI command");
 

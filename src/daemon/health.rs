@@ -6,19 +6,14 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-/// Default health check interval
 const DEFAULT_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
-/// Health manager that monitors service processes
 pub struct HealthManager {
-    /// Reference to the service manager
     services: Arc<RwLock<HashMap<String, ManagedService>>>,
-    /// Health check interval
     check_interval: Duration,
 }
 
 impl HealthManager {
-    /// Create a new health manager
     pub fn new(service_manager: &ServiceManager) -> Self {
         Self {
             services: service_manager.services_ref(),
@@ -26,15 +21,12 @@ impl HealthManager {
         }
     }
 
-    /// Set the health check interval
     pub fn with_interval(mut self, interval: Duration) -> Self {
         self.check_interval = interval;
         self
     }
 
-    /// Run the health check loop
-    ///
-    /// This should be spawned as a background task.
+    /// Spawns as a background task to monitor service health.
     pub async fn run(&self) {
         info!(
             "Health manager started (interval: {:?})",
@@ -49,43 +41,60 @@ impl HealthManager {
         }
     }
 
-    /// Check health of all services
     async fn check_all(&self) {
-        let services_to_check: Vec<(String, ServiceState, Option<u32>, bool, u32)> = {
+        // Collect names of running services, then check each one while
+        // holding a write lock so we can call try_wait() to reap zombies.
+        let running_names: Vec<String> = {
             let services = self.services.read().await;
             services
                 .iter()
                 .filter(|(_, s)| s.state == ServiceState::Running)
-                .map(|(name, s)| {
-                    (
-                        name.clone(),
-                        s.state,
-                        s.pid(),
-                        s.config.restart_on_failure,
-                        s.config.max_restarts,
-                    )
-                })
+                .map(|(name, _)| name.clone())
                 .collect()
         };
 
-        for (name, _state, pid, restart_on_failure, max_restarts) in services_to_check {
-            if let Some(pid) = pid {
-                if !self.is_process_running(pid) {
-                    warn!("Service '{}' (PID {}) has died unexpectedly", name, pid);
-                    self.handle_service_death(&name, restart_on_failure, max_restarts)
-                        .await;
+        for name in running_names {
+            let (alive, pid, restart_on_failure, max_restarts) = {
+                let mut services = self.services.write().await;
+                let Some(service) = services.get_mut(&name) else {
+                    continue;
+                };
+                let restart_on_failure = service.config.restart_on_failure;
+                let max_restarts = service.config.max_restarts;
+                let pid = service.pid();
+
+                // Prefer try_wait() on owned Child handle -- this both detects
+                // exit and reaps zombies so they don't linger in the process table.
+                let alive = if let Some(ref mut child) = service.process {
+                    match child.try_wait() {
+                        Ok(Some(_exit_status)) => false, // exited (zombie reaped)
+                        Ok(None) => true,                // still running
+                        Err(_) => false,                 // error querying, treat as dead
+                    }
+                } else if let Some(pid) = pid {
+                    // Fallback to PID-based check (includes zombie detection)
+                    lib_daemon_core::is_process_running(pid)
                 } else {
-                    debug!("Service '{}' (PID {}) is healthy", name, pid);
+                    false
+                };
+
+                (alive, pid, restart_on_failure, max_restarts)
+            };
+
+            if !alive {
+                if let Some(pid) = pid {
+                    warn!("Service '{}' (PID {}) has died unexpectedly", name, pid);
+                } else {
+                    warn!("Service '{}' has no PID, marking as failed", name);
                 }
+                self.handle_service_death(&name, restart_on_failure, max_restarts)
+                    .await;
             } else {
-                // No PID means process didn't start properly
-                warn!("Service '{}' has no PID, marking as failed", name);
-                self.mark_failed(&name, "Process has no PID").await;
+                debug!("Service '{}' (PID {:?}) is healthy", name, pid);
             }
         }
     }
 
-    /// Handle a service that has died
     async fn handle_service_death(&self, name: &str, restart_on_failure: bool, max_restarts: u32) {
         let mut services = self.services.write().await;
 
@@ -98,17 +107,14 @@ impl HealthManager {
                     max_restarts
                 );
 
-                // Update state for restart
                 service.state = ServiceState::Starting;
                 service.restarts += 1;
                 service.process = None;
                 service.started_at = None;
 
-                // Build and spawn command
                 let config = service.config.clone();
-                drop(services); // Release lock before spawning
+                drop(services);
 
-                // Spawn the process
                 if let Err(e) = self.restart_service(name, &config).await {
                     error!("Failed to restart service '{}': {}", name, e);
                     self.mark_failed(name, &e.to_string()).await;
@@ -126,7 +132,6 @@ impl HealthManager {
         }
     }
 
-    /// Restart a service by spawning a new process
     async fn restart_service(
         &self,
         name: &str,
@@ -151,7 +156,6 @@ impl HealthManager {
 
         let child = cmd.spawn()?;
 
-        // Update service with new process
         let mut services = self.services.write().await;
         if let Some(service) = services.get_mut(name) {
             let pid = child.id();
@@ -166,7 +170,6 @@ impl HealthManager {
         Ok(())
     }
 
-    /// Mark a service as failed
     async fn mark_failed(&self, name: &str, error: &str) {
         let mut services = self.services.write().await;
         if let Some(service) = services.get_mut(name) {
@@ -175,30 +178,19 @@ impl HealthManager {
             service.process = None;
         }
     }
-
-    /// Check if a process is running
-    fn is_process_running(&self, pid: u32) -> bool {
-        lib_daemon_core::is_process_running(pid)
-    }
 }
 
-/// Health status summary
 #[derive(Debug, Clone)]
 pub struct HealthStatus {
-    /// Total number of services
     pub total: usize,
-    /// Number of running services
     pub running: usize,
-    /// Number of stopped services
     pub stopped: usize,
-    /// Number of failed services
     pub failed: usize,
     /// Services that need attention (failed or restarting frequently)
     pub unhealthy: Vec<String>,
 }
 
 impl HealthStatus {
-    /// Create a new health status from service map
     pub async fn from_services(services: &Arc<RwLock<HashMap<String, ManagedService>>>) -> Self {
         let services = services.read().await;
 
@@ -232,7 +224,6 @@ impl HealthStatus {
         status
     }
 
-    /// Check if all services are healthy
     pub fn is_healthy(&self) -> bool {
         self.failed == 0 && self.unhealthy.is_empty()
     }

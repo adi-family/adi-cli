@@ -4,7 +4,7 @@ use super::protocol::{ArchivedRequest, MessageFrame, Response};
 use super::services::ServiceManager;
 use crate::clienv;
 use anyhow::Result;
-use lib_daemon_core::{PidFile, ShutdownCoordinator};
+use lib_daemon_core::{PidFile, ShutdownCoordinator, ShutdownHandle};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -35,45 +35,47 @@ pub struct DaemonServer {
     executor: Arc<CommandExecutor>,
     started_at: Instant,
     version: String,
+    shutdown_handle: Option<ShutdownHandle>,
 }
 
 impl DaemonServer {
-    pub fn new(config: DaemonConfig) -> Self {
+    pub async fn new(config: DaemonConfig) -> Self {
+        let mut manager = ServiceManager::new();
+        if let Err(e) = manager.discover_plugins().await {
+            warn!("Failed to discover plugin daemon services: {}", e);
+        }
+
         Self {
             config,
-            services: Arc::new(ServiceManager::new()),
+            services: Arc::new(manager),
             executor: Arc::new(CommandExecutor::new()),
             started_at: Instant::now(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            shutdown_handle: None,
         }
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
         info!("ADI daemon starting...");
 
-        // Check if already running
         let pid_file = PidFile::new(&self.config.pid_path);
         if let Some(pid) = pid_file.is_running()? {
             anyhow::bail!("Daemon already running with PID {}", pid);
         }
         drop(pid_file);
 
-        // Write PID file
         let mut pid_file = PidFile::new(&self.config.pid_path);
         pid_file.write()?;
         info!("PID file written: {}", self.config.pid_path.display());
 
-        // Remove existing socket if present
         if self.config.socket_path.exists() {
             std::fs::remove_file(&self.config.socket_path)?;
         }
 
-        // Ensure socket directory exists
         if let Some(parent) = self.config.socket_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
 
-        // Bind IPC socket
         #[cfg(unix)]
         let listener = tokio::net::UnixListener::bind(&self.config.socket_path)?;
 
@@ -88,7 +90,6 @@ impl DaemonServer {
             self.config.socket_path.display()
         );
 
-        // Set socket permissions (Unix only)
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -96,7 +97,6 @@ impl DaemonServer {
             std::fs::set_permissions(&self.config.socket_path, perms)?;
         }
 
-        // Start auto-start services
         for name in &self.config.auto_start {
             info!("Auto-starting service: {}", name);
             if let Err(e) = self.services.start(name, None).await {
@@ -104,16 +104,14 @@ impl DaemonServer {
             }
         }
 
-        // Start health manager
         let health_manager = HealthManager::new(&self.services);
         tokio::spawn(async move {
             health_manager.run().await;
         });
 
-        // Setup shutdown coordinator
         let mut shutdown = ShutdownCoordinator::new();
+        self.shutdown_handle = Some(shutdown.handle());
 
-        // Handle signals
         #[cfg(unix)]
         {
             use tokio::signal::unix::{signal, SignalKind};
@@ -145,7 +143,6 @@ impl DaemonServer {
             });
         }
 
-        // Main loop
         let server = Arc::new(self);
         info!("ADI daemon ready");
 
@@ -173,11 +170,9 @@ impl DaemonServer {
             }
         }
 
-        // Graceful shutdown
         info!("Stopping all services...");
         server.services.stop_all().await;
 
-        // Cleanup socket
         if server.config.socket_path.exists() {
             std::fs::remove_file(&server.config.socket_path)?;
         }
@@ -190,24 +185,19 @@ impl DaemonServer {
     async fn handle_connection(&self, mut stream: tokio::net::UnixStream) -> Result<()> {
         trace!("New connection accepted");
 
-        // Read request length
         let mut len_buf = [0u8; 4];
         stream.read_exact(&mut len_buf).await?;
         let len = MessageFrame::read_length(&len_buf);
         trace!("Request length: {} bytes", len);
 
-        // Read request bytes
         let mut request_buf = vec![0u8; len];
         stream.read_exact(&mut request_buf).await?;
 
-        // Zero-copy access to request
         let archived = rkyv::access::<ArchivedRequest, rkyv::rancor::Error>(&request_buf)
             .map_err(|e| anyhow::anyhow!("Failed to deserialize request: {}", e))?;
 
-        // Handle request
         let response = self.handle_request(archived).await;
 
-        // Send response
         let response_bytes = MessageFrame::encode_response(&response)
             .map_err(|e| anyhow::anyhow!("Failed to encode response: {}", e))?;
         stream.write_all(&response_bytes).await?;
@@ -221,23 +211,18 @@ impl DaemonServer {
     async fn handle_connection(&self, mut stream: tokio::net::TcpStream) -> Result<()> {
         trace!("New connection accepted");
 
-        // Read request length
         let mut len_buf = [0u8; 4];
         stream.read_exact(&mut len_buf).await?;
         let len = MessageFrame::read_length(&len_buf);
 
-        // Read request bytes
         let mut request_buf = vec![0u8; len];
         stream.read_exact(&mut request_buf).await?;
 
-        // Zero-copy access to request
         let archived = rkyv::access::<ArchivedRequest, rkyv::rancor::Error>(&request_buf)
             .map_err(|e| anyhow::anyhow!("Failed to deserialize request: {}", e))?;
 
-        // Handle request
         let response = self.handle_request(archived).await;
 
-        // Send response
         let response_bytes = MessageFrame::encode_response(&response)
             .map_err(|e| anyhow::anyhow!("Failed to encode response: {}", e))?;
         stream.write_all(&response_bytes).await?;
@@ -258,8 +243,9 @@ impl DaemonServer {
 
             ArchivedRequest::Shutdown { graceful } => {
                 info!("Handling: Shutdown (graceful: {})", graceful);
-                // Shutdown will be handled by the main loop
-                // For now, just acknowledge
+                if let Some(handle) = &self.shutdown_handle {
+                    handle.shutdown();
+                }
                 Response::Ok
             }
 
@@ -302,7 +288,6 @@ impl DaemonServer {
 
             ArchivedRequest::ServiceLogs { name, lines, follow } => {
                 debug!("Handling: ServiceLogs({}, lines: {}, follow: {})", name, lines, follow);
-                // TODO: Implement log retrieval
                 Response::Logs { lines: Vec::new() }
             }
 
@@ -324,9 +309,7 @@ impl DaemonServer {
             ArchivedRequest::SudoRun { command, args, reason } => {
                 info!("Handling: SudoRun({} {:?}) - {}", command, args, reason);
                 let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-                
-                // TODO: Validate command against allowed patterns from plugin manifest
-                
+
                 match self.executor.sudo_run(command.as_str(), &args).await {
                     Ok(output) => Response::CommandResult {
                         exit_code: output.status.code().unwrap_or(-1),

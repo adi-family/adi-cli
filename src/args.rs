@@ -158,6 +158,12 @@ pub(crate) enum DaemonCommands {
         #[arg(short, long)]
         follow: bool,
     },
+
+    /// Run a specific plugin's daemon service (internal, used by daemon supervisor)
+    RunService {
+        /// Plugin ID to run (e.g., "adi.hive")
+        plugin_id: String,
+    },
 }
 
 #[derive(Subcommand)]

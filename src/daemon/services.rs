@@ -10,32 +10,22 @@ use tokio::process::{Child, Command};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
-/// Manages plugin services as child processes
 pub struct ServiceManager {
-    /// Running services by name
     services: Arc<RwLock<HashMap<String, ManagedService>>>,
-    /// Service registry for discovering plugin services
     registry: ServiceRegistry,
 }
 
-/// A managed service with its process and metadata
 pub struct ManagedService {
-    /// Service configuration
     pub config: ServiceConfig,
-    /// Current state
     pub state: ServiceState,
-    /// Child process (if running)
     pub process: Option<Child>,
-    /// Time when service was started
     pub started_at: Option<Instant>,
     /// Number of restarts since daemon started
     pub restarts: u32,
-    /// Last error message
     pub last_error: Option<String>,
 }
 
 impl ManagedService {
-    /// Create a new managed service
     pub fn new(config: ServiceConfig) -> Self {
         Self {
             config,
@@ -47,17 +37,14 @@ impl ManagedService {
         }
     }
 
-    /// Get current PID if running
     pub fn pid(&self) -> Option<u32> {
         self.process.as_ref().and_then(|p| p.id())
     }
 
-    /// Get uptime in seconds if running
     pub fn uptime_secs(&self) -> Option<u64> {
         self.started_at.map(|t| t.elapsed().as_secs())
     }
 
-    /// Convert to ServiceInfo for IPC responses
     pub fn to_info(&self, name: &str) -> ServiceInfo {
         ServiceInfo {
             name: name.to_string(),
@@ -71,7 +58,6 @@ impl ManagedService {
 }
 
 impl ServiceManager {
-    /// Create a new service manager
     pub fn new() -> Self {
         Self {
             services: Arc::new(RwLock::new(HashMap::new())),
@@ -79,11 +65,14 @@ impl ServiceManager {
         }
     }
 
-    /// Start a service
+    /// Discover daemon services from installed plugin manifests
+    pub async fn discover_plugins(&mut self) -> Result<()> {
+        self.registry.discover_plugins().await
+    }
+
     pub async fn start(&self, name: &str, config: Option<ServiceConfig>) -> Result<()> {
         let mut services = self.services.write().await;
 
-        // Get or create service entry
         let service = if let Some(s) = services.get_mut(name) {
             if s.state.is_running() {
                 anyhow::bail!("Service '{}' is already running", name);
@@ -99,29 +88,23 @@ impl ServiceManager {
             services.get_mut(name).unwrap()
         };
 
-        // Update state
         service.state = ServiceState::Starting;
         service.last_error = None;
 
-        // Build command
         let mut cmd = Command::new(&service.config.command);
         cmd.args(&service.config.args);
 
-        // Set environment
         for (key, value) in &service.config.env {
             cmd.env(key, value);
         }
 
-        // Set working directory
         if let Some(ref dir) = service.config.working_dir {
             cmd.current_dir(std::path::Path::new(dir));
         }
 
-        // Capture output for logging
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        // Spawn process
         match cmd.spawn() {
             Ok(child) => {
                 let pid = child.id();
@@ -142,7 +125,6 @@ impl ServiceManager {
         }
     }
 
-    /// Stop a service
     pub async fn stop(&self, name: &str, force: bool) -> Result<()> {
         let mut services = self.services.write().await;
 
@@ -198,18 +180,14 @@ impl ServiceManager {
         Ok(())
     }
 
-    /// Restart a service
     pub async fn restart(&self, name: &str) -> Result<()> {
-        // Get config before stopping
         let config = {
             let services = self.services.read().await;
             services.get(name).map(|s| s.config.clone())
         };
 
-        // Stop if running
         self.stop(name, false).await?;
 
-        // Increment restart counter
         {
             let mut services = self.services.write().await;
             if let Some(service) = services.get_mut(name) {
@@ -217,11 +195,9 @@ impl ServiceManager {
             }
         }
 
-        // Start again
         self.start(name, config).await
     }
 
-    /// List all services
     pub async fn list(&self) -> Vec<ServiceInfo> {
         let services = self.services.read().await;
         services
@@ -230,13 +206,11 @@ impl ServiceManager {
             .collect()
     }
 
-    /// Get a specific service
     pub async fn get(&self, name: &str) -> Option<ServiceInfo> {
         let services = self.services.read().await;
         services.get(name).map(|s| s.to_info(name))
     }
 
-    /// Stop all services
     pub async fn stop_all(&self) {
         let names: Vec<String> = {
             let services = self.services.read().await;
@@ -250,7 +224,6 @@ impl ServiceManager {
         }
     }
 
-    /// Check if a service process is still running
     pub async fn is_process_alive(&self, name: &str) -> bool {
         let services = self.services.read().await;
         if let Some(service) = services.get(name) {
@@ -261,7 +234,6 @@ impl ServiceManager {
         false
     }
 
-    /// Mark a service as failed
     pub async fn mark_failed(&self, name: &str, error: &str) {
         let mut services = self.services.write().await;
         if let Some(service) = services.get_mut(name) {
@@ -271,7 +243,6 @@ impl ServiceManager {
         }
     }
 
-    /// Get service restart policy
     pub async fn should_restart(&self, name: &str) -> bool {
         let services = self.services.read().await;
         if let Some(service) = services.get(name) {
@@ -293,88 +264,52 @@ impl Default for ServiceManager {
     }
 }
 
-/// Registry for discovering plugin service configurations
 pub struct ServiceRegistry {
-    /// Built-in service configs
     builtin: HashMap<String, ServiceConfig>,
 }
 
 impl ServiceRegistry {
-    /// Create a new service registry
     pub fn new() -> Self {
-        let mut builtin = HashMap::new();
-
-        // Register built-in services
-        // These will be overridden by plugin discovery
-
-        // Hive service
-        builtin.insert(
-            "hive".to_string(),
-            ServiceConfig::new("adi")
-                .args(["run", "adi.hive", "serve"])
-                .env("RUST_LOG", "info")
-                .restart_on_failure(true)
-                .max_restarts(3),
-        );
-
-        // Indexer service
-        builtin.insert(
-            "indexer".to_string(),
-            ServiceConfig::new("adi")
-                .args(["run", "adi.indexer", "serve"])
-                .env("RUST_LOG", "info")
-                .restart_on_failure(true)
-                .max_restarts(3),
-        );
-
-        // LLM Proxy service
-        builtin.insert(
-            "llm-proxy".to_string(),
-            ServiceConfig::new("adi")
-                .args(["run", "adi.llm-proxy", "serve"])
-                .env("RUST_LOG", "info")
-                .restart_on_failure(true)
-                .max_restarts(3),
-        );
-
-        Self { builtin }
+        Self {
+            builtin: HashMap::new(),
+        }
     }
 
-    /// Get service configuration by name
     pub fn get_config(&self, name: &str) -> Option<ServiceConfig> {
         self.builtin.get(name).cloned()
     }
 
-    /// Register a plugin service
     pub fn register(&mut self, name: String, config: ServiceConfig) {
         self.builtin.insert(name, config);
     }
 
-    /// List all registered services
     pub fn list(&self) -> Vec<String> {
         self.builtin.keys().cloned().collect()
     }
 
-    /// Discover services from installed plugins
-    ///
-    /// Reads plugin manifests to find services with `[package.metadata.plugin.service]`
+    /// Scan installed plugin manifests for daemon service declarations
     pub async fn discover_plugins(&mut self) -> Result<()> {
         let plugins_dir = clienv::plugins_dir();
-
         if !plugins_dir.exists() {
             return Ok(());
         }
 
-        // Scan plugin directories for manifests
         let mut entries = tokio::fs::read_dir(&plugins_dir).await?;
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
-            if path.is_dir() {
-                let manifest_path = path.join("manifest.toml");
-                if manifest_path.exists() {
-                    if let Err(e) = self.load_plugin_manifest(&manifest_path).await {
-                        warn!("Failed to load plugin manifest {:?}: {}", manifest_path, e);
-                    }
+            if !path.is_dir() {
+                continue;
+            }
+
+            let manifest_path = crate::plugin_runtime::find_plugin_toml_path(&path);
+            let Some(manifest_path) = manifest_path else {
+                continue;
+            };
+
+            match self.load_daemon_from_manifest(&manifest_path).await {
+                Ok(()) => {}
+                Err(e) => {
+                    warn!("Failed to load manifest {:?}: {}", manifest_path, e);
                 }
             }
         }
@@ -382,32 +317,28 @@ impl ServiceRegistry {
         Ok(())
     }
 
-    /// Load a plugin manifest and register its service if defined
-    async fn load_plugin_manifest(&self, path: &std::path::Path) -> Result<()> {
+    async fn load_daemon_from_manifest(&mut self, path: &std::path::Path) -> Result<()> {
         let content = tokio::fs::read_to_string(path).await?;
-        let manifest: toml::Value = toml::from_str(&content)?;
+        let manifest: lib_plugin_manifest::PluginManifest = toml::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse manifest: {}", e))?;
 
-        // Check for service configuration
-        if let Some(service) = manifest
-            .get("package")
-            .and_then(|p| p.get("metadata"))
-            .and_then(|m| m.get("plugin"))
-            .and_then(|p| p.get("service"))
-        {
-            let name = service
-                .get("name")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Service missing name"))?;
+        let daemon_info = match &manifest.daemon {
+            Some(info) => info,
+            None => return Ok(()),
+        };
 
-            let command = service
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("serve");
+        let plugin_id = &manifest.plugin.id;
+        let exe = std::env::current_exe()
+            .map_err(|e| anyhow::anyhow!("Failed to get exe path: {}", e))?;
 
-            debug!("Discovered plugin service: {} (command: {})", name, command);
+        let config = ServiceConfig::new(exe.display().to_string())
+            .args(["daemon", "run-service", plugin_id.as_str()])
+            .env("RUST_LOG", "info")
+            .restart_on_failure(daemon_info.restart_on_failure)
+            .max_restarts(daemon_info.max_restarts);
 
-            // Service will be registered when the plugin is loaded
-        }
+        info!("Discovered daemon service: {}", plugin_id);
+        self.register(plugin_id.clone(), config);
 
         Ok(())
     }
@@ -434,10 +365,9 @@ mod tests {
     }
 
     #[test]
-    fn test_service_registry() {
+    fn test_service_registry_empty() {
         let registry = ServiceRegistry::new();
-        assert!(registry.get_config("hive").is_some());
-        assert!(registry.get_config("indexer").is_some());
+        assert!(registry.get_config("hive").is_none());
         assert!(registry.get_config("nonexistent").is_none());
     }
 

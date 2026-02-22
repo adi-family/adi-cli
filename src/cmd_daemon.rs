@@ -24,6 +24,7 @@ pub async fn cmd_daemon(command: DaemonCommands) -> Result<()> {
             lines,
             follow,
         } => cmd_service_logs(&service, lines, follow).await,
+        DaemonCommands::RunService { plugin_id } => cmd_daemon_run_service(&plugin_id).await,
     }
 }
 
@@ -43,7 +44,7 @@ async fn cmd_daemon_run() -> Result<()> {
     println!();
 
     let config = DaemonConfig::default();
-    let server = DaemonServer::new(config);
+    let server = DaemonServer::new(config).await;
     server.run().await
 }
 
@@ -325,7 +326,6 @@ async fn cmd_service_logs(name: &str, lines: usize, follow: bool) -> Result<()> 
             theme::icons::INFO,
             theme::bold(name)
         );
-        // TODO: Implement log streaming
         println!(
             "{} Log streaming not yet implemented",
             theme::icons::WARNING
@@ -344,6 +344,52 @@ async fn cmd_service_logs(name: &str, lines: usize, follow: bool) -> Result<()> 
             println!();
         }
     }
+
+    Ok(())
+}
+
+async fn cmd_daemon_run_service(plugin_id: &str) -> Result<()> {
+    use cli::plugin_runtime::{PluginRuntime, RuntimeConfig};
+    use lib_plugin_abi_v3::daemon::DaemonContext;
+
+    println!(
+        "{} Running daemon service for plugin: {}",
+        theme::icons::INFO,
+        theme::bold(plugin_id)
+    );
+
+    let runtime = PluginRuntime::new(RuntimeConfig::default()).await?;
+    runtime.load_all_plugins().await?;
+
+    let daemon_service = runtime
+        .get_daemon_service(plugin_id)
+        .ok_or_else(|| anyhow::anyhow!(
+            "Plugin '{}' does not provide a daemon service", plugin_id
+        ))?;
+
+    let data_dir = lib_daemon_client::paths::data_dir().join(plugin_id);
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("~/.config"))
+        .join("adi")
+        .join(plugin_id);
+
+    std::fs::create_dir_all(&data_dir)?;
+    std::fs::create_dir_all(&config_dir)?;
+
+    let ctx = DaemonContext::new(plugin_id, data_dir, config_dir);
+
+    println!(
+        "  Socket: {}",
+        theme::muted(ctx.socket_path.display())
+    );
+    println!(
+        "  PID:    {}",
+        theme::muted(ctx.pid_file.display())
+    );
+    println!();
+
+    daemon_service.start(ctx).await
+        .map_err(|e| anyhow::anyhow!("Daemon service failed: {}", e))?;
 
     Ok(())
 }
