@@ -39,10 +39,19 @@ pub struct DaemonServer {
 }
 
 impl DaemonServer {
-    pub async fn new(config: DaemonConfig) -> Self {
+    pub async fn new(mut config: DaemonConfig) -> Self {
         let mut manager = ServiceManager::new();
         if let Err(e) = manager.discover_plugins().await {
             warn!("Failed to discover plugin daemon services: {}", e);
+        }
+
+        // Extend auto_start with any services marked auto_start=true in their manifests
+        let discovered = manager.auto_start_names();
+        for name in discovered {
+            if !config.auto_start.contains(&name) {
+                info!("Scheduling auto-start for discovered service: {}", name);
+                config.auto_start.push(name);
+            }
         }
 
         Self {

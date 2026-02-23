@@ -43,6 +43,13 @@ async fn cmd_daemon_run() -> Result<()> {
     );
     println!();
 
+    // Claim any socket-activated fds from launchd (macOS) before spawning child
+    // service processes.  The raw fd numbers are kept open for the lifetime of
+    // the daemon so that child processes can inherit them.  The env var
+    // ADI_ACTIVATED_LISTEN_FDS is set automatically so children find them via
+    // receive_activated_listeners().
+    let _activated_fds = lib_daemon_core::prepare_activated_fds_for_children();
+
     let config = DaemonConfig::default();
     let server = DaemonServer::new(config).await;
     server.run().await

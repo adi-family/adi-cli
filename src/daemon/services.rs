@@ -70,6 +70,11 @@ impl ServiceManager {
         self.registry.discover_plugins().await
     }
 
+    /// Return service names that should be started automatically at daemon startup
+    pub fn auto_start_names(&self) -> Vec<String> {
+        self.registry.auto_start_names().to_vec()
+    }
+
     pub async fn start(&self, name: &str, config: Option<ServiceConfig>) -> Result<()> {
         let mut services = self.services.write().await;
 
@@ -102,8 +107,8 @@ impl ServiceManager {
             cmd.current_dir(std::path::Path::new(dir));
         }
 
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
+        cmd.stdout(Stdio::inherit());
+        cmd.stderr(Stdio::inherit());
 
         match cmd.spawn() {
             Ok(child) => {
@@ -266,12 +271,14 @@ impl Default for ServiceManager {
 
 pub struct ServiceRegistry {
     builtin: HashMap<String, ServiceConfig>,
+    auto_start: Vec<String>,
 }
 
 impl ServiceRegistry {
     pub fn new() -> Self {
         Self {
             builtin: HashMap::new(),
+            auto_start: Vec::new(),
         }
     }
 
@@ -285,6 +292,10 @@ impl ServiceRegistry {
 
     pub fn list(&self) -> Vec<String> {
         self.builtin.keys().cloned().collect()
+    }
+
+    pub fn auto_start_names(&self) -> &[String] {
+        &self.auto_start
     }
 
     /// Scan installed plugin manifests for daemon service declarations
@@ -337,7 +348,12 @@ impl ServiceRegistry {
             .restart_on_failure(daemon_info.restart_on_failure)
             .max_restarts(daemon_info.max_restarts);
 
-        info!("Discovered daemon service: {}", plugin_id);
+        if daemon_info.auto_start {
+            info!("Discovered daemon service (auto-start): {}", plugin_id);
+            self.auto_start.push(plugin_id.clone());
+        } else {
+            info!("Discovered daemon service: {}", plugin_id);
+        }
         self.register(plugin_id.clone(), config);
 
         Ok(())
