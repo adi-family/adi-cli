@@ -5,7 +5,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use lib_console_output::{theme, out_info, out_success, out_warn};
 use lib_i18n_core::t;
 use lib_plugin_host::{is_glob_pattern, InstallResult, PluginConfig, PluginInstaller, UpdateCheck};
-use lib_plugin_registry::{PluginEntry, PluginInfo, SearchResults};
+use registry_client::{PluginEntry, PluginInfo, SearchResults};
 
 use crate::error::Result;
 
@@ -247,7 +247,7 @@ impl PluginManager {
         Ok(())
     }
 
-    fn display_matching_plugins(plugins: &[lib_plugin_registry::PluginEntry]) {
+    fn display_matching_plugins(plugins: &[registry_client::PluginEntry]) {
         out_info!("{}", t!("plugin-install-pattern-found", "count" => &plugins.len().to_string()));
         for plugin in plugins {
             out_info!("  {} {} - {}",
@@ -260,7 +260,7 @@ impl PluginManager {
 
     async fn install_batch(
         &self,
-        plugins: &[lib_plugin_registry::PluginEntry],
+        plugins: &[registry_client::PluginEntry],
         version: Option<&str>,
     ) -> Vec<String> {
         let mut failed = Vec::new();
