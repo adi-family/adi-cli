@@ -46,7 +46,7 @@ async fn handle_list(manager: &PluginManager) -> anyhow::Result<()> {
             theme::brand_bold(&p.id).to_string(),
             theme::muted(format!("v{}", p.latest_version)).to_string(),
             p.description.clone(),
-            theme::warning(&p.plugin_type).to_string(),
+            theme::warning(p.plugin_types.join(", ")).to_string(),
         ]))
         .print();
 

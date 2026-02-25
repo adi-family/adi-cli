@@ -1,3 +1,4 @@
+use super::log_buffer::LogBuffer;
 use super::protocol::{ServiceConfig, ServiceInfo, ServiceState};
 use crate::clienv;
 use anyhow::Result;
@@ -6,6 +7,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
@@ -13,6 +15,7 @@ use tracing::{debug, error, info, warn};
 pub struct ServiceManager {
     services: Arc<RwLock<HashMap<String, ManagedService>>>,
     registry: ServiceRegistry,
+    log_buffer: Arc<LogBuffer>,
 }
 
 pub struct ManagedService {
@@ -58,11 +61,16 @@ impl ManagedService {
 }
 
 impl ServiceManager {
-    pub fn new() -> Self {
+    pub fn new(log_buffer: Arc<LogBuffer>) -> Self {
         Self {
             services: Arc::new(RwLock::new(HashMap::new())),
             registry: ServiceRegistry::new(),
+            log_buffer,
         }
+    }
+
+    pub fn log_buffer(&self) -> &Arc<LogBuffer> {
+        &self.log_buffer
     }
 
     /// Discover daemon services from installed plugin manifests
@@ -107,13 +115,15 @@ impl ServiceManager {
             cmd.current_dir(std::path::Path::new(dir));
         }
 
-        cmd.stdout(Stdio::inherit());
-        cmd.stderr(Stdio::inherit());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
 
         match cmd.spawn() {
-            Ok(child) => {
+            Ok(mut child) => {
                 let pid = child.id();
                 info!("Started service '{}' with PID {:?}", name, pid);
+
+                spawn_log_readers(name, &mut child, &self.log_buffer);
 
                 service.process = Some(child);
                 service.state = ServiceState::Running;
@@ -263,9 +273,27 @@ impl ServiceManager {
     }
 }
 
-impl Default for ServiceManager {
-    fn default() -> Self {
-        Self::new()
+/// Spawn background tasks that read stdout/stderr from a child process into the LogBuffer.
+fn spawn_log_readers(service_name: &str, child: &mut Child, log_buffer: &Arc<LogBuffer>) {
+    if let Some(stdout) = child.stdout.take() {
+        let buf = Arc::clone(log_buffer);
+        let name = service_name.to_string();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                buf.push(&name, line);
+            }
+        });
+    }
+    if let Some(stderr) = child.stderr.take() {
+        let buf = Arc::clone(log_buffer);
+        let name = service_name.to_string();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                buf.push(&name, line);
+            }
+        });
     }
 }
 
@@ -344,7 +372,7 @@ impl ServiceRegistry {
 
         let config = ServiceConfig::new(exe.display().to_string())
             .args(["daemon", "run-service", plugin_id.as_str()])
-            .env("RUST_LOG", "info")
+            .env("RUST_LOG", "trace")
             .restart_on_failure(daemon_info.restart_on_failure)
             .max_restarts(daemon_info.max_restarts);
 
@@ -389,7 +417,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_service_manager_list() {
-        let manager = ServiceManager::new();
+        let manager = ServiceManager::new(Arc::new(LogBuffer::default()));
         let list = manager.list().await;
         assert!(list.is_empty()); // No services started
     }

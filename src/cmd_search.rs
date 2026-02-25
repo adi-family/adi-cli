@@ -42,7 +42,7 @@ pub(crate) async fn cmd_search(query: &str) -> anyhow::Result<()> {
                 theme::brand_bold(&plugin.id).to_string(),
                 theme::muted(format!("v{}", plugin.latest_version)).to_string(),
                 plugin.description.clone(),
-                theme::warning(&plugin.plugin_type).to_string(),
+                theme::warning(plugin.plugin_types.join(", ")).to_string(),
             ]));
         cols.print();
 

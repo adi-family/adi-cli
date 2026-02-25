@@ -149,7 +149,7 @@ async fn get_available_languages() -> Vec<(String, String)> {
 fn registry_languages(plugins: &[registry_client::PluginEntry]) -> Vec<(String, String)> {
     plugins
         .iter()
-        .filter(|p| p.plugin_type == "translation")
+        .filter(|p| p.plugin_types.iter().any(|t| t == "translation"))
         .filter_map(|p| {
             let lang_code = p.id.strip_prefix(cli::clienv::CLI_PLUGIN_PREFIX)?;
             if lang_code == "en-US" {

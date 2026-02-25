@@ -1,5 +1,6 @@
 use super::executor::CommandExecutor;
 use super::health::HealthManager;
+use super::log_buffer::LogBuffer;
 use super::protocol::{ArchivedRequest, MessageFrame, Response};
 use super::services::ServiceManager;
 use crate::clienv;
@@ -40,7 +41,8 @@ pub struct DaemonServer {
 
 impl DaemonServer {
     pub async fn new(mut config: DaemonConfig) -> Self {
-        let mut manager = ServiceManager::new();
+        let log_buffer = Arc::new(LogBuffer::default());
+        let mut manager = ServiceManager::new(Arc::clone(&log_buffer));
         if let Err(e) = manager.discover_plugins().await {
             warn!("Failed to discover plugin daemon services: {}", e);
         }
@@ -295,9 +297,11 @@ impl DaemonServer {
                 Response::Services { list }
             }
 
-            ArchivedRequest::ServiceLogs { name, lines, follow } => {
-                debug!("Handling: ServiceLogs({}, lines: {}, follow: {})", name, lines, follow);
-                Response::Logs { lines: Vec::new() }
+            ArchivedRequest::ServiceLogs { name, lines, follow: _ } => {
+                let n: usize = (*lines).try_into().unwrap_or(100);
+                debug!("Handling: ServiceLogs({}, lines: {})", name, n);
+                let log_lines = self.services.log_buffer().tail(name.as_str(), n);
+                Response::Logs { lines: log_lines }
             }
 
             ArchivedRequest::Run { command, args } => {

@@ -1,8 +1,10 @@
+use super::log_buffer::LogBuffer;
 use super::protocol::ServiceState;
 use super::services::{ManagedService, ServiceManager};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
@@ -10,6 +12,7 @@ const DEFAULT_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
 pub struct HealthManager {
     services: Arc<RwLock<HashMap<String, ManagedService>>>,
+    log_buffer: Arc<LogBuffer>,
     check_interval: Duration,
 }
 
@@ -17,6 +20,7 @@ impl HealthManager {
     pub fn new(service_manager: &ServiceManager) -> Self {
         Self {
             services: service_manager.services_ref(),
+            log_buffer: Arc::clone(service_manager.log_buffer()),
             check_interval: DEFAULT_CHECK_INTERVAL,
         }
     }
@@ -154,7 +158,29 @@ impl HealthManager {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        let child = cmd.spawn()?;
+        let mut child = cmd.spawn()?;
+
+        // Capture stdout/stderr into log buffer
+        if let Some(stdout) = child.stdout.take() {
+            let buf = Arc::clone(&self.log_buffer);
+            let svc = name.to_string();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    buf.push(&svc, line);
+                }
+            });
+        }
+        if let Some(stderr) = child.stderr.take() {
+            let buf = Arc::clone(&self.log_buffer);
+            let svc = name.to_string();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    buf.push(&svc, line);
+                }
+            });
+        }
 
         let mut services = self.services.write().await;
         if let Some(service) = services.get_mut(name) {
