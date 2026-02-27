@@ -164,6 +164,9 @@ pub(crate) enum DaemonCommands {
         /// Plugin ID to run (e.g., "adi.hive")
         plugin_id: String,
     },
+
+    /// Set up system users and privileges for the daemon
+    Setup,
 }
 
 #[derive(Subcommand)]

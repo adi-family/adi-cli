@@ -25,6 +25,7 @@ pub async fn cmd_daemon(command: DaemonCommands) -> Result<()> {
             follow,
         } => cmd_service_logs(&service, lines, follow).await,
         DaemonCommands::RunService { plugin_id } => cmd_daemon_run_service(&plugin_id).await,
+        DaemonCommands::Setup => cmd_daemon_setup().await,
     }
 }
 
@@ -353,6 +354,10 @@ async fn cmd_service_logs(name: &str, lines: usize, follow: bool) -> Result<()> 
     }
 
     Ok(())
+}
+
+async fn cmd_daemon_setup() -> Result<()> {
+    cli::daemon::setup::run_setup().await
 }
 
 async fn cmd_daemon_run_service(plugin_id: &str) -> Result<()> {

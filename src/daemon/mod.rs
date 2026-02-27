@@ -5,6 +5,7 @@ pub mod log_buffer;
 pub mod protocol;
 pub mod server;
 pub mod services;
+pub mod setup;
 
 pub use client::DaemonClient;
 pub use executor::CommandExecutor;
