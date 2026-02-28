@@ -90,6 +90,9 @@ impl ServiceManager {
             if s.state.is_running() {
                 anyhow::bail!("Service '{}' is already running", name);
             }
+            if let Some(cfg) = config {
+                s.config = cfg;
+            }
             s
         } else {
             // Look up service config from registry
