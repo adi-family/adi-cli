@@ -90,12 +90,6 @@ impl DaemonServer {
         #[cfg(unix)]
         let listener = tokio::net::UnixListener::bind(&self.config.socket_path)?;
 
-        #[cfg(not(unix))]
-        let listener = {
-            let port = clienv::daemon_tcp_port();
-            tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await?
-        };
-
         info!(
             "IPC server listening on: {}",
             self.config.socket_path.display()
