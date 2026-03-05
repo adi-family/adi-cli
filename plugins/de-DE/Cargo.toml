@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 path = "../translation.rs"
 
 [dependencies]
-lib-plugin-abi-v3 = { path = "../../../lib/lib-plugin-abi-v3" }
+lib-plugin-abi-v3 = { path = "../../../_lib/lib-plugin-abi-v3" }
 
 [build-dependencies]
 toml = "0.8"

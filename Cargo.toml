@@ -32,28 +32,28 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # GitHub API
-lib-client-github = { path = "../lib/lib-client/github" }
+lib-client-github = { path = "../_lib/lib-client/github" }
 
 # Plugin system (unified v3 ABI)
 registry-client = { path = "../registry/client" }
-lib-plugin-host = { path = "../lib/lib-plugin-host" }
-lib-plugin-abi-v3 = { path = "../lib/lib-plugin-abi-v3" }
-lib-plugin-manifest = { path = "../lib/lib-plugin-manifest" }
+lib-plugin-host = { path = "../_lib/lib-plugin-host" }
+lib-plugin-abi-v3 = { path = "../_lib/lib-plugin-abi-v3" }
+lib-plugin-manifest = { path = "../_lib/lib-plugin-manifest" }
 
 # Internationalization
-lib-i18n-core = { path = "../lib/lib-i18n-core" }
+lib-i18n-core = { path = "../_lib/lib-i18n-core" }
 
 # Console output with theme support
-lib-console-output = { path = "../lib/lib-console-output" }
+lib-console-output = { path = "../_lib/lib-console-output" }
 
 # Environment variable parsing
-lib-env-parse = { path = "../lib/lib-env-parse" }
+lib-env-parse = { path = "../_lib/lib-env-parse" }
 
 # Daemon core (process management, lifecycle, PID files)
-lib-daemon-core = { path = "../lib/lib-daemon-core" }
+lib-daemon-core = { path = "../_lib/lib-daemon-core" }
 
 # Daemon client (IPC protocol, client)
-lib-daemon-client = { path = "../lib/lib-daemon-client" }
+lib-daemon-client = { path = "../_lib/lib-daemon-client" }
 
 # Zero-copy serialization for IPC
 rkyv = { version = "0.8" }
